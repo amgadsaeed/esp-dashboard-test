@@ -330,20 +330,24 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         lc1, lc2, lc3 = st.columns(3)
         with lc1:
             st.markdown("**Desktop Bars & Elements**")
-            desktop_sd_offset = st.slider("Shutdown Bar Left Offset (Desktop)", -0.5, 0.0, -0.19, 0.01)
-            desktop_temp_offset = st.slider("Motor Temp Bar Left Offset (Desktop)", -0.5, 0.0, -0.19, 0.01)
-            desktop_pie_offset = st.slider("Pie Chart X Offset (Desktop)", -0.3, 0.3, 0.0, 0.01)
+            desktop_hspace = st.slider("Section Vertical Spacing (Desktop)", 0.2, 0.8, 0.45, 0.05)
+            desktop_wspace = st.slider("Section Horizontal Spacing (Desktop)", 0.1, 0.5, 0.25, 0.05)
+            desktop_sd_margin = st.slider("Shutdown Bar Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
+            desktop_temp_margin = st.slider("Motor Temp Bar Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
+            desktop_pie_offset = st.slider("Pie Chart X Offset (Desktop)", -0.4, 0.4, 0.0, 0.01)
             
         with lc2:
             st.markdown("**Mobile Bars & Elements**")
-            mobile_sd_offset = st.slider("Shutdown Bar Left Offset (Mobile)", -0.6, 0.0, -0.17, 0.01)
-            mobile_temp_offset = st.slider("Motor Temp Bar Left Offset (Mobile)", -0.6, 0.0, -0.17, 0.01)
-            mobile_pie_offset = st.slider("Pie Chart X Offset (Mobile)", -0.3, 0.3, 0.0, 0.01)
+            mobile_hspace = st.slider("Section Vertical Spacing (Mobile)", 0.2, 1.0, 0.50, 0.05)
+            mobile_sd_margin = st.slider("Shutdown Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
+            mobile_temp_margin = st.slider("Motor Temp Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
+            mobile_pie_offset = st.slider("Pie Chart X Offset (Mobile)", -0.4, 0.4, 0.0, 0.01)
             
         with lc3:
             st.markdown("**General Spacing**")
-            kpi_space = st.slider("Space BEFORE Lost Comm Note", 0.0, 0.1, 0.02, 0.005)
-            kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.1, 0.02, 0.005)
+            kpi_top_pad = st.slider("Space ABOVE Cards", 0.0, 0.3, 0.05, 0.01)
+            kpi_space = st.slider("Space BEFORE Lost Comm Note", 0.0, 0.3, 0.05, 0.01)
+            kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.3, 0.05, 0.01)
             div_pad = st.slider("Green Divider Padding", 0.01, 0.2, 0.1, 0.01)
             footer_y = st.slider("Footer Line Y Position", 0.01, 0.1, 0.045, 0.005)
 
@@ -399,12 +403,16 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         
         # Inject design settings directly into the summary payload
         summary['design_settings'] = {
-            'desktop_sd_offset': desktop_sd_offset,
-            'desktop_temp_offset': desktop_temp_offset,
+            'desktop_hspace': desktop_hspace,
+            'desktop_wspace': desktop_wspace,
+            'desktop_sd_margin': desktop_sd_margin,
+            'desktop_temp_margin': desktop_temp_margin,
             'desktop_pie_offset': desktop_pie_offset,
-            'mobile_sd_offset': mobile_sd_offset,
-            'mobile_temp_offset': mobile_temp_offset,
+            'mobile_hspace': mobile_hspace,
+            'mobile_sd_margin': mobile_sd_margin,
+            'mobile_temp_margin': mobile_temp_margin,
             'mobile_pie_offset': mobile_pie_offset,
+            'kpi_top_pad': kpi_top_pad,
             'kpi_space': kpi_space,
             'kpi_bottom_space': kpi_bottom_space,
             'div_pad': div_pad,
