@@ -696,9 +696,9 @@ def build_summary(results, total_wells_expected=None, miscommunication_wells=Non
 
 def draw_kpi_cards(fig, gs_cell, summary):
     settings = summary.get('design_settings', {})
-    top_pad = settings.get('kpi_top_pad', 0.02)
-    mid_pad = settings.get('kpi_space', 0.05)
-    bot_pad = settings.get('kpi_bottom_space', 0.05)
+    top_pad = settings.get('kpi_top_pad', 0.0)
+    mid_pad = settings.get('kpi_space', 0.02)
+    bot_pad = settings.get('kpi_bottom_space', 0.02)
     
     ax = fig.add_subplot(gs_cell)
     ax.axis('off')
@@ -735,13 +735,14 @@ def draw_kpi_cards(fig, gs_cell, summary):
 
     NOTE_ROW_H = 0.20 
     
-    # Exact dynamic limits mapping slider inputs to physical bounds
+    top_y = 0.88 + top_pad
     if notes:
         total_notes_height = mid_pad + (len(notes) * NOTE_ROW_H)
-        ax.set_ylim(0.08 - total_notes_height - bot_pad, 1.0 + top_pad)
+        bot_y = 0.08 - total_notes_height - bot_pad
     else:
-        ax.set_ylim(0.08 - bot_pad, 1.0 + top_pad)
+        bot_y = 0.08 - bot_pad
         
+    ax.set_ylim(bot_y, top_y)
     ax.set_xlim(0, n)
     card_w, gap = 0.88, 0.12
 
@@ -861,9 +862,9 @@ def draw_shutdown_count_bar(fig, gs_cell, shutdown_count_df, summary, is_mobile=
     ax.set_yticks(range(len(wells)))
     ax.set_yticklabels([])
     
-    # Text rigorously hugs the bars and uses the left margin natively
+    # Text rigorously hugs the bars by anchoring to -0.01 axis coordinates
     for i, w in enumerate(wells):
-        ax.text(-0.02, i, w, ha='right', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
+        ax.text(-0.01, i, w, ha='right', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
     
     for i, v in enumerate(shown['Shutdown Count'].values):
         ax.text(v + shown['Shutdown Count'].max() * 0.02, i, str(int(v)), va='center',
@@ -893,7 +894,7 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
     shown = temp_df.head(15).iloc[::-1]
 
     settings = summary.get('design_settings', {})
-    margin = settings.get('mobile_temp_margin', 0.13) if is_mobile else settings.get('desktop_temp_margin', 0.08)
+    margin = settings.get('mobile_temp_margin', 0.17) if is_mobile else settings.get('desktop_temp_margin', 0.19)
     
     gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[margin, 1.0 - margin], wspace=0.0)
     ax = fig.add_subplot(gs_inner[1])
@@ -918,7 +919,7 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
     ax.set_yticks(range(len(wells)))
     ax.set_yticklabels([])
     for i, w in enumerate(wells):
-        ax.text(-0.02, i, w, ha='right', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
+        ax.text(-0.01, i, w, ha='right', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
 
     for i, (b, r) in enumerate(zip(baseline.values, rise.values)):
         ax.text(b * 0.5, i, f'{b:.1f}\u00b0F', va='center', ha='center',
@@ -927,10 +928,11 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
                 fontweight='bold', fontsize=14 if is_mobile else 11.5, color=RED)
 
     # Expanded upper y-limit gives the inner legend a dedicated, overlapping-free zone
-    ax.set_ylim(-0.5, len(wells) - 0.5 + 2.2)
+    ax.set_ylim(-0.5, len(wells) - 0.5 + 2.0)
     ax.set_xlim(0, (baseline + rise).max() * 1.15)
     ax.set_xlabel('Motor Temperature (\u00b0F)', fontsize=14 if is_mobile else 12, color=SLATE)
     
+    # Legend safely locked inside the top right corner
     ax.legend(loc='upper right', bbox_to_anchor=(0.99, 0.98), ncol=2, frameon=False, labelcolor=SLATE)
 
 
@@ -984,7 +986,7 @@ def draw_reason_pie(fig, gs_cell, reason_counts, summary, max_slices=8, is_mobil
         textprops=dict(color='white', fontweight='bold', fontsize=13 if is_mobile else 10.5),
     )
     
-    # Physically move the pie chart using xlim panning
+    # Physically pan the camera over the pie chart to move it seamlessly
     ax.axis('equal')
     ax.set_xlim(-1.5 - poffset*3, 1.5 - poffset*3)
     ax.set_ylim(-1.5, 1.5)
@@ -1002,26 +1004,26 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
     title_fs = 19 if is_mobile else 16
     pad_val = 14 if is_mobile else 10
 
+    outer_ax = fig.add_subplot(gs_cell)
+    outer_ax.axis('off')
+    outer_ax.set_title(f'High Vibration Alerts (Vx > {thresh}G)', fontsize=title_fs, fontweight='bold', color=DARK_GREEN, pad=pad_val, loc='left')
+
     if vx_df is None or vx_df.empty:
-        ax = fig.add_subplot(gs_cell)
-        ax.axis('off')
-        ax.set_title(f'High Vibration Alerts (Vx > {thresh}G)', fontsize=title_fs, fontweight='bold', color=DARK_GREEN, pad=pad_val, loc='left')
-        ax.text(0.02, 0.5, f'No wells exceeded {thresh}G.', fontsize=15 if is_mobile else 13, color=SLATE, transform=ax.transAxes)
+        outer_ax.text(0.02, 0.5, f'No wells exceeded {thresh}G.', fontsize=15 if is_mobile else 13, color=SLATE, transform=outer_ax.transAxes)
         return
 
     n_wells = len(vx_df)
-    gs_inner = gs_cell.subgridspec(n_wells + 1, 1, height_ratios=[0.1] + [1]*n_wells, hspace=0.3)
-    
-    title_ax = fig.add_subplot(gs_inner[0])
-    title_ax.axis('off')
-    title_ax.set_title(f'High Vibration Alerts (Vx > {thresh}G)', fontsize=title_fs, fontweight='bold', color=DARK_GREEN, pad=0, loc='left')
+    settings = summary.get('design_settings', {})
+    margin = settings.get('mobile_vx_margin', 0.17) if is_mobile else settings.get('desktop_vx_margin', 0.19)
+
+    gs_inner = gs_cell.subgridspec(n_wells + 1, 2, width_ratios=[margin, 1.0 - margin], height_ratios=[0.1] + [1]*n_wells, hspace=0.3, wspace=0.0)
 
     palette = sns.color_palette("Set1", n_wells)
     report_start = summary.get('report_start')
     report_end = summary.get('report_end')
 
     for i, row in vx_df.iterrows():
-        ax = fig.add_subplot(gs_inner[i + 1])
+        ax = fig.add_subplot(gs_inner[i + 1, 1])
         ax.set_facecolor(BG_PANEL)
         for spine in ['top', 'right']:
             ax.spines[spine].set_visible(False)
@@ -1039,28 +1041,34 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
         ax.plot(ts[COL_TIMESTAMP], ts[COL_VX], color=palette[i], linewidth=2.0 if is_mobile else 1.5)
         ax.axhline(thresh, color=RED, linestyle='--', linewidth=1.8 if is_mobile else 1.5, alpha=0.8)
 
-        # Well name cleanly horizontal on the Y axis
-        ax.set_ylabel(well, rotation=0, ha='right', va='center', labelpad=10, fontsize=12 if is_mobile else 11, color=NAVY, fontweight='bold')
-        ax.set_ylim(0, max_y * 1.15)
+        # Well names horizontally written matching the Bar Charts' left alignment logic
+        ax.text(-0.01, 0.5, well, ha='right', va='center', transform=ax.transAxes, fontsize=13 if is_mobile else 11, color=NAVY, fontweight='bold')
         
+        ax.set_ylim(0, max_y * 1.15)
         if report_start and report_end:
             ax.set_xlim([report_start, report_end])
             
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        
         if i < n_wells - 1:
             ax.tick_params(labelbottom=False)
             
     first_ax = fig.axes[-n_wells]
     first_ax.plot([], [], color=RED, linestyle='--', label=f'Threshold ({thresh}G)')
-    first_ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.35 if is_mobile else 1.25), ncol=1, frameon=False, labelcolor=SLATE)
+    first_ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.45 if is_mobile else 1.35), ncol=1, frameon=False, labelcolor=SLATE)
 
 
-def draw_logos(fig):
+def draw_logos(fig, summary):
+    settings = summary.get('design_settings', {})
+    tam_scale = settings.get('tam_scale', 1.0)
+    khalda_scale = settings.get('khalda_scale', 1.0)
+
     if TAM_LOGO_PATH and os.path.isfile(TAM_LOGO_PATH):
         try:
             tam_logo = mpimg.imread(TAM_LOGO_PATH)
-            ax_logo_left = fig.add_axes([0.06, 0.865, 0.165, 0.095])
+            w = 0.165 * tam_scale
+            h = 0.095 * tam_scale
+            y = 0.865 + 0.095 - h
+            ax_logo_left = fig.add_axes([0.06, y, w, h])
             ax_logo_left.imshow(tam_logo)
             ax_logo_left.axis('off')
         except Exception as e:
@@ -1069,7 +1077,10 @@ def draw_logos(fig):
     if KHALDA_LOGO_PATH and os.path.isfile(KHALDA_LOGO_PATH):
         try:
             khalda_logo = mpimg.imread(KHALDA_LOGO_PATH)
-            ax_logo_right = fig.add_axes([0.75, 0.865, 0.165, 0.095])
+            w = 0.165 * khalda_scale
+            h = 0.095 * khalda_scale
+            y = 0.865 + 0.095 - h
+            ax_logo_right = fig.add_axes([0.75, y, w, h])
             ax_logo_right.imshow(khalda_logo)
             ax_logo_right.axis('off')
         except Exception as e:
@@ -1084,9 +1095,9 @@ def compute_row_height_ratios(summary):
     n_vx = len(summary['vx_df']) if not summary['vx_df'].empty else 0
 
     settings = summary.get('design_settings', {})
-    kpi_top = settings.get('kpi_top_pad', 0.02)
-    kpi_mid = settings.get('kpi_space', 0.05)
-    kpi_bot = settings.get('kpi_bottom_space', 0.05)
+    kpi_top = settings.get('kpi_top_pad', 0.0)
+    kpi_bot = settings.get('kpi_bottom_space', 0.02)
+    kpi_mid = settings.get('kpi_space', 0.02)
 
     note_lines = (
         (1 if summary.get('stopped', 0) > 0 else 0)
@@ -1094,10 +1105,10 @@ def compute_row_height_ratios(summary):
         + (1 if summary.get('no_data', 0) > 0 else 0)
     )
     
-    ratio_kpi = 0.30 + kpi_top + kpi_bot + (note_lines * (0.08 + kpi_mid))
+    ratio_kpi = 0.25 + kpi_top + kpi_bot + (note_lines * (0.08 + kpi_mid))
     ratio_shutdown = min(1.35, max(0.35, 0.30 + 0.0525 * n_sd))
     ratio_bar_pie = min(1.00, max(0.55, 0.50 + 0.0333 * n_bar))
-    ratio_vx = max(0.35, 0.1 + n_vx * 0.15)
+    ratio_vx = max(0.40, 0.15 + n_vx * 0.20)
     ratio_pip = min(1.05, max(0.40, 0.30 + 0.0625 * n_pip))
     ratio_temp = min(1.00, max(0.35, 0.30 + 0.0333 * n_temp))
     return [ratio_kpi, ratio_shutdown, ratio_bar_pie, ratio_vx, ratio_pip, ratio_temp]
@@ -1115,7 +1126,7 @@ def draw_section_dividers(fig, gs, summary):
     x0, x1 = lefts[0], rights[-1]
     
     settings = summary.get('design_settings', {})
-    padding = settings.get('div_pad', 0.05)
+    padding = settings.get('div_pad', 0.1)
 
     for row in range(len(tops) - 1):
         y_mid = (bottoms[row] + tops[row + 1]) / 2.0
@@ -1135,7 +1146,7 @@ def build_dashboard_figure(summary, report_date, output_png):
     settings = summary.get('design_settings', {})
     vspace = settings.get('desktop_hspace', 0.45)
     wspace = settings.get('desktop_wspace', 0.25)
-    footer_y = settings.get('footer_y', 0.04)
+    footer_y = settings.get('footer_y', 0.045)
     
     height_ratios = compute_row_height_ratios(summary)
     gridspec_in = sum(height_ratios) * INCHES_PER_RATIO_UNIT
@@ -1153,7 +1164,7 @@ def build_dashboard_figure(summary, report_date, output_png):
     fig.text(0.5, 0.895, f'Field Summary  \u2022  {summary["total"]} Wells  \u2022  {report_date}',
               fontsize=16, color=GREEN, ha='center')
 
-    draw_logos(fig)
+    draw_logos(fig, summary)
 
     draw_kpi_cards(fig, gs[0, :], summary)
 
@@ -1337,9 +1348,9 @@ def _shorten_dt(val):
 
 def draw_kpi_cards_mobile(fig, gs_cell, summary):
     settings = summary.get('design_settings', {})
-    top_pad = settings.get('kpi_top_pad', 0.02)
-    mid_pad = settings.get('kpi_space', 0.05)
-    bot_pad = settings.get('kpi_bottom_space', 0.05)
+    top_pad = settings.get('kpi_top_pad', 0.0)
+    mid_pad = settings.get('kpi_space', 0.02)
+    bot_pad = settings.get('kpi_bottom_space', 0.02)
 
     ax = fig.add_subplot(gs_cell)
     ax.axis('off')
@@ -1376,12 +1387,14 @@ def draw_kpi_cards_mobile(fig, gs_cell, summary):
 
     NOTE_ROW_H = 0.20
     
+    top_y = 0.88 + top_pad
     if notes:
         total_notes_height = mid_pad + (len(notes) * NOTE_ROW_H)
-        ax.set_ylim(0.08 - total_notes_height - bot_pad, 1.0 + top_pad)
+        bot_y = 0.08 - total_notes_height - bot_pad
     else:
-        ax.set_ylim(0.08 - bot_pad, 1.0 + top_pad)
+        bot_y = 0.08 - bot_pad
         
+    ax.set_ylim(bot_y, top_y)
     ax.set_xlim(0, n)
     card_w, gap = 0.88, 0.12
 
@@ -1418,20 +1431,20 @@ def compute_row_height_ratios_mobile(summary):
     n_vx = len(summary['vx_df']) if not summary['vx_df'].empty else 0
 
     settings = summary.get('design_settings', {})
-    kpi_top = settings.get('kpi_top_pad', 0.02)
-    kpi_mid = settings.get('kpi_space', 0.05)
-    kpi_bot = settings.get('kpi_bottom_space', 0.05)
+    kpi_top = settings.get('kpi_top_pad', 0.0)
+    kpi_bot = settings.get('kpi_bottom_space', 0.02)
+    kpi_mid = settings.get('kpi_space', 0.02)
 
     note_lines = (
         (1 if summary.get('stopped', 0) > 0 else 0)
         + (1 if summary.get('miscommunication', 0) > 0 and summary.get('miscommunication_wells') else 0)
         + (1 if summary.get('no_data', 0) > 0 else 0)
     )
-    ratio_kpi = 0.30 + kpi_top + kpi_bot + (note_lines * (0.08 + kpi_mid))
+    ratio_kpi = 0.20 + kpi_top + kpi_bot + (note_lines * (0.08 + kpi_mid))
     ratio_shutdown = min(1.55, max(0.32, 0.20 + 0.065 * n_sd))
     ratio_bar = min(1.05, max(0.38, 0.22 + 0.052 * n_bar))
     ratio_pie = min(1.05, max(0.52, 0.30 + 0.068 * n_pie))
-    ratio_vx = max(0.40, 0.1 + n_vx * 0.18) # Shorter charts per well
+    ratio_vx = max(0.40, 0.15 + n_vx * 0.22)
     ratio_pip = min(1.05, max(0.32, 0.19 + 0.068 * n_pip))
     ratio_temp = min(1.20, max(0.45, 0.28 + 0.055 * n_temp))
     
@@ -1458,7 +1471,7 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     fig.text(0.5, 0.957, f'{summary["total"]} Wells  \u2022  {report_date}',
               fontsize=13.5, color=GREEN, ha='center')
 
-    draw_logos_mobile(fig, fig_height)
+    draw_logos_mobile(fig, fig_height, summary)
 
     draw_kpi_cards_mobile(fig, gs[0], summary)
 
@@ -1505,17 +1518,16 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     plt.close(fig)
 
 
-# Shrunk Maximum limits to guarantee they never clip titles
-MOBILE_LOGO_HEIGHT_IN = 0.35
-MOBILE_LOGO_MAX_WIDTH_IN = 0.90
+MOBILE_LOGO_HEIGHT_IN = 0.50
+MOBILE_LOGO_MAX_WIDTH_IN = 1.30
 
 
-def _place_logo_mobile(fig, path, fig_height, side):
+def _place_logo_mobile(fig, path, fig_height, side, scale):
     img = mpimg.imread(path)
     px_h, px_w = img.shape[0], img.shape[1]
     aspect = px_w / px_h
-    h_in = MOBILE_LOGO_HEIGHT_IN
-    w_in = min(MOBILE_LOGO_MAX_WIDTH_IN, aspect * h_in)
+    h_in = MOBILE_LOGO_HEIGHT_IN * scale
+    w_in = min(MOBILE_LOGO_MAX_WIDTH_IN * scale, aspect * h_in)
 
     w_frac = w_in / MOBILE_FIG_WIDTH_IN
     h_frac = h_in / fig_height
@@ -1527,15 +1539,19 @@ def _place_logo_mobile(fig, path, fig_height, side):
     ax_logo.axis('off')
 
 
-def draw_logos_mobile(fig, fig_height):
+def draw_logos_mobile(fig, fig_height, summary):
+    settings = summary.get('design_settings', {})
+    tam_scale = settings.get('tam_scale', 1.0)
+    khalda_scale = settings.get('khalda_scale', 1.0)
+
     if TAM_LOGO_PATH and os.path.isfile(TAM_LOGO_PATH):
         try:
-            _place_logo_mobile(fig, TAM_LOGO_PATH, fig_height, 'left')
+            _place_logo_mobile(fig, TAM_LOGO_PATH, fig_height, 'left', tam_scale)
         except Exception as e:
             print(f'Could not load TAM logo ({TAM_LOGO_PATH}): {e}')
 
     if KHALDA_LOGO_PATH and os.path.isfile(KHALDA_LOGO_PATH):
         try:
-            _place_logo_mobile(fig, KHALDA_LOGO_PATH, fig_height, 'right')
+            _place_logo_mobile(fig, KHALDA_LOGO_PATH, fig_height, 'right', khalda_scale)
         except Exception as e:
             print(f'Could not load Khalda logo ({KHALDA_LOGO_PATH}): {e}')
