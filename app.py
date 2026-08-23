@@ -172,7 +172,6 @@ if process_clicked:
         else:
             dates = [r["date_range"][0] for r in results if r.get("date_range")]
             if dates:
-                # Force exact 7 AM start bound
                 report_start = dates[0].normalize() + pd.Timedelta(hours=7)
                 if dates[0] < report_start:
                     report_start -= pd.Timedelta(days=1)
@@ -188,7 +187,6 @@ if process_clicked:
                 total_expected = int(fallback_total) if fallback_total else len(results)
                 summary = dl.build_summary(results, total_wells_expected=total_expected)
 
-            # Store absolute bounds inside summary for plotting
             summary['report_start'] = report_start
             summary['report_end'] = report_end
             summary['vx_threshold'] = dl.VX_THRESHOLD_G
@@ -345,7 +343,7 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             
         with lc3:
             st.markdown("**General Spacing**")
-            kpi_top_pad = st.slider("Space ABOVE Cards", 0.0, 0.3, 0.05, 0.01)
+            kpi_top_pad = st.slider("Space ABOVE Cards", 0.0, 0.3, 0.02, 0.01)
             kpi_space = st.slider("Space BEFORE Lost Comm Note", 0.0, 0.3, 0.05, 0.01)
             kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.3, 0.05, 0.01)
             div_pad = st.slider("Green Divider Padding", 0.01, 0.2, 0.1, 0.01)
