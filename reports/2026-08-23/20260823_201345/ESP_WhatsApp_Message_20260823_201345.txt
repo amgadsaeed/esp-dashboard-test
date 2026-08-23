@@ -1,0 +1,37 @@
+*Daily ESP Surveillance Summary*
+22-Aug-2026 7 AM  to  23-Aug-2026 7 AM
+----------------------------------------
+Total Wells Tracked: 80
+Running: 78
+Stopped: 0
+Miscommunication: 2
+----------------------------------------
+*KEY OPERATIONAL ALERTS*
+
+Stopped Wells: None recorded
+
+*Miscommunication Wells* (2): Bravo-S03, BOLT 12-01X
+
+*Shutdown Events* (6 total):
+   • LADICE-01X: 2.35 hrs (Digital In2-Lockout)
+   • KHR-SB03: 1.75 hrs (IO Module 3- Digital Input 1 Lockout)
+   • MRZK-76: 1.24 hrs (Manual Stop)
+   • KHLD-37: 1.1 hrs (Rotation)
+   • KHR-C201: 0.25 hrs (Low Supply Voltage)
+   _...and 1 more in the report._
+
+*Vibration Alerts* > 1.5G or doubled & still doubled at 7AM (1 wells):
+   • SIWA2-L07: Max 1.89 G
+
+*Rising PIP Trends* (7 wells):
+   • TAYIM-W12: +74.9 psi
+   • WKAL.Ferris-W2: +68.0 psi
+   • SIWA-RNE01X: +61.5 psi
+   • Berenice-39: +52.9 psi
+   • NU-38: +45.4 psi
+
+*Sustained Motor Temp Increase* > 3.0°F, still up at 7AM (2 wells):
+   • NU-39: +5.4°F (now 305.2°F)
+   • MRZK-76: +4.9°F (now 229.2°F)
+----------------------------------------
+_Dashboard PNG, Detail Excel Workbook, and text log attached below._
