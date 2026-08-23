@@ -187,6 +187,7 @@ if process_clicked:
                 total_expected = int(fallback_total) if fallback_total else len(results)
                 summary = dl.build_summary(results, total_wells_expected=total_expected)
 
+            # Store absolute bounds inside summary for plotting
             summary['report_start'] = report_start
             summary['report_end'] = report_end
             summary['vx_threshold'] = dl.VX_THRESHOLD_G
@@ -332,22 +333,26 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             desktop_wspace = st.slider("Section Horizontal Spacing (Desktop)", 0.1, 0.5, 0.25, 0.05)
             desktop_sd_margin = st.slider("Shutdown Bar Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
             desktop_temp_margin = st.slider("Motor Temp Bar Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
-            desktop_pie_offset = st.slider("Pie Chart X Offset (Desktop)", -0.4, 0.4, 0.0, 0.01)
+            desktop_vx_margin = st.slider("Vibration Chart Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
+            desktop_pie_offset = st.slider("Pie Chart X Offset (Desktop)", -0.5, 0.5, 0.0, 0.01)
             
         with lc2:
             st.markdown("**Mobile Bars & Elements**")
             mobile_hspace = st.slider("Section Vertical Spacing (Mobile)", 0.2, 1.0, 0.50, 0.05)
             mobile_sd_margin = st.slider("Shutdown Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
             mobile_temp_margin = st.slider("Motor Temp Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
-            mobile_pie_offset = st.slider("Pie Chart X Offset (Mobile)", -0.4, 0.4, 0.0, 0.01)
+            mobile_vx_margin = st.slider("Vibration Chart Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
+            mobile_pie_offset = st.slider("Pie Chart X Offset (Mobile)", -0.5, 0.5, 0.0, 0.01)
             
         with lc3:
-            st.markdown("**General Spacing**")
-            kpi_top_pad = st.slider("Space ABOVE Cards", 0.0, 0.3, 0.02, 0.01)
-            kpi_space = st.slider("Space BEFORE Lost Comm Note", 0.0, 0.3, 0.05, 0.01)
-            kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.3, 0.05, 0.01)
-            div_pad = st.slider("Green Divider Padding", 0.01, 0.2, 0.1, 0.01)
-            footer_y = st.slider("Footer Line Y Position", 0.01, 0.1, 0.045, 0.005)
+            st.markdown("**Spacing & Logos**")
+            tam_scale = st.slider("TAM Logo Size (Scale)", 0.5, 2.0, 1.0, 0.05)
+            khalda_scale = st.slider("Khalda Logo Size (Scale)", 0.5, 2.0, 1.0, 0.05)
+            kpi_top_pad = st.slider("Space ABOVE Cards", -0.1, 0.3, 0.0, 0.01)
+            kpi_space = st.slider("Space BEFORE Lost Comm Note", 0.0, 0.3, 0.02, 0.01)
+            kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.3, 0.02, 0.01)
+            div_pad = st.slider("Green Divider Padding", 0.0, 0.2, 0.1, 0.01)
+            footer_y = st.slider("Footer Line Y Position", 0.0, 0.1, 0.035, 0.005)
 
     st.divider()
     build_clicked = st.button("Build outputs", type="primary")
@@ -405,11 +410,15 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             'desktop_wspace': desktop_wspace,
             'desktop_sd_margin': desktop_sd_margin,
             'desktop_temp_margin': desktop_temp_margin,
+            'desktop_vx_margin': desktop_vx_margin,
             'desktop_pie_offset': desktop_pie_offset,
             'mobile_hspace': mobile_hspace,
             'mobile_sd_margin': mobile_sd_margin,
             'mobile_temp_margin': mobile_temp_margin,
+            'mobile_vx_margin': mobile_vx_margin,
             'mobile_pie_offset': mobile_pie_offset,
+            'tam_scale': tam_scale,
+            'khalda_scale': khalda_scale,
             'kpi_top_pad': kpi_top_pad,
             'kpi_space': kpi_space,
             'kpi_bottom_space': kpi_bottom_space,
