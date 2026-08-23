@@ -142,14 +142,14 @@ with st.expander("Advanced Limits & Tolerances", expanded=False):
                 help=help_text, key=f"threshold_{attr}",
             )
 
+# Apply thresholds immediately to DL namespace so they persist across Streamlit re-runs
+for attr, label, min_val, step, is_minutes, help_text in ESSENTIAL_THRESHOLDS + ADVANCED_THRESHOLDS:
+    val = threshold_values[attr]
+    setattr(dl, attr, pd.Timedelta(minutes=val) if is_minutes else val)
+
 process_clicked = st.button("Process data", type="primary", disabled=not (all_wells_zip or single_wells_zip))
 
 if process_clicked:
-    # Apply thresholds
-    for attr, label, min_val, step, is_minutes, help_text in ESSENTIAL_THRESHOLDS + ADVANCED_THRESHOLDS:
-        val = threshold_values[attr]
-        setattr(dl, attr, pd.Timedelta(minutes=val) if is_minutes else val)
-
     tmp_root = tempfile.mkdtemp(prefix="esp_dash_")
     try:
         all_wells_path = None
@@ -170,6 +170,16 @@ if process_clicked:
         if not results:
             st.error(f"No .xlsx well files found in the uploaded ZIP(s).")
         else:
+            dates = [r["date_range"][0] for r in results if r.get("date_range")]
+            if dates:
+                # Force exact 7 AM start bound
+                report_start = dates[0].normalize() + pd.Timedelta(hours=7)
+                if dates[0] < report_start:
+                    report_start -= pd.Timedelta(days=1)
+            else:
+                report_start = pd.Timestamp(datetime.now().date()) + pd.Timedelta(hours=7)
+            report_end = report_start + pd.Timedelta(days=1)
+
             if master_wells:
                 summary = dl.build_summary(results, miscommunication_wells=master_wells, master_snapshot=master_df)
                 st.info(f"Detected a field master list ({len(master_wells)} wells listed) \u2014 "
@@ -178,9 +188,13 @@ if process_clicked:
                 total_expected = int(fallback_total) if fallback_total else len(results)
                 summary = dl.build_summary(results, total_wells_expected=total_expected)
 
-            dates = [r["date_range"][0] for r in results if r.get("date_range")]
-            report_start = dates[0].normalize() if dates else pd.Timestamp(datetime.now().date())
-            report_end = report_start + pd.Timedelta(days=1)
+            # Store absolute bounds inside summary for plotting
+            summary['report_start'] = report_start
+            summary['report_end'] = report_end
+            summary['vx_threshold'] = dl.VX_THRESHOLD_G
+            summary['pip_threshold'] = dl.PIP_RISE_THRESHOLD_PSI
+            summary['temp_threshold'] = dl.TEMP_RISE_THRESHOLD_F
+
             report_date = (
                 f"{report_start.strftime('%d-%b-%Y')} 7 AM  to  "
                 f"{report_end.strftime('%d-%b-%Y')} 7 AM"
@@ -265,10 +279,9 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
     ).round(2)
 
     # ---- High vibration alerts ----
-    st.subheader(f"High Vibration Alerts (Vx > {dl.VX_THRESHOLD_G}G)")
+    st.subheader(f"High Vibration Alerts (Vx > {summary.get('vx_threshold', 2.0)}G)")
     vx_df = summary["vx_df"].copy().reset_index(drop=True)
     
-    # Detach timeseries data temporarily to prevent Streamlit rendering crash
     vx_ts_col = None
     if not vx_df.empty and 'timeseries' in vx_df.columns:
         vx_ts_col = vx_df[['Well', 'timeseries']]
@@ -285,7 +298,7 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         edited_vx = edited_vx_raw[edited_vx_raw["Keep"]].drop(columns=["Keep"]).reset_index(drop=True)
         
     # ---- Rising PIP trends ----
-    st.subheader(f"Rising PIP Trends (> {dl.PIP_RISE_THRESHOLD_PSI} psi)")
+    st.subheader(f"Rising PIP Trends (> {summary.get('pip_threshold', 25.0)} psi)")
     pip_df = summary["pip_df"].copy().reset_index(drop=True)
     if pip_df.empty:
         st.caption("No wells showed a sustained PIP rise.")
@@ -298,7 +311,7 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         edited_pip = edited_pip_raw[edited_pip_raw["Keep"]].drop(columns=["Keep"]).reset_index(drop=True)
 
     # ---- Sustained motor temp increase ----
-    st.subheader(f"Sustained Motor Temp Increase (> {dl.TEMP_RISE_THRESHOLD_F}\u00b0F, still up at 7AM)")
+    st.subheader(f"Sustained Motor Temp Increase (> {summary.get('temp_threshold', 3.0)}\u00b0F, still up at 7AM)")
     temp_df = summary["temp_df"].copy().reset_index(drop=True)
     if temp_df.empty:
         st.caption("No wells showed a sustained motor-temp rise.")
@@ -314,13 +327,11 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
     build_clicked = st.button("Build outputs", type="primary")
 
     if build_clicked:
-        # Recompute miscommunication table
         new_mc_wells = edited_mc["Well"].dropna().astype(str).tolist()
         summary["miscommunication_wells"] = new_mc_wells
         summary["miscommunication"] = len(new_mc_wells)
         summary['total'] = summary['files_found'] + summary['miscommunication']
 
-        # Update well status rows
         ws_df = summary["well_status_df"].copy()
         ws_df = ws_df[ws_df['Status'] != 'Miscommunication']
         new_rows = []
@@ -338,7 +349,6 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         else:
             summary["well_status_df"] = ws_df
 
-        # Recompute derived tables 
         df = edited_shutdown.copy()
         if not df.empty:
             df["Downtime (hrs)"] = pd.to_numeric(df["Downtime (hrs)"], errors="coerce").fillna(0.0)
@@ -356,7 +366,6 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         summary["shutdown_count_df"] = shutdown_count_df
         summary["reason_counts"] = reason_counts
         
-        # Re-attach timeseries back to vx_df if they kept it
         if not edited_vx.empty and vx_ts_col is not None:
             edited_vx = edited_vx.merge(vx_ts_col, on='Well', how='left')
             
