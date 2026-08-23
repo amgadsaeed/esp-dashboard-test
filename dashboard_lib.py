@@ -1116,7 +1116,7 @@ def build_dashboard_figure(summary, report_date, output_png):
     draw_table(
         fig, gs[1, :], summary['shutdown_df'],
         columns=['Well', 'Reason', 'Shutdown Start', 'Shutdown End', 'Downtime (hrs)'],
-        title=f'Shutdown Events & Downtime',
+        title=f'Shutdown Events & Downtime (sorted by downtime)',
         accent=LIGHT_GREEN, empty_msg='No shutdown events logged for this period.',
         max_rows=20, col_widths=[0.14, 0.34, 0.18, 0.18, 0.16], is_mobile=False
     )
@@ -1140,7 +1140,7 @@ def build_dashboard_figure(summary, report_date, output_png):
 
     draw_motor_temp_bar(fig, gs[5, :], summary['temp_df'], summary, is_mobile=False)
 
-    # Footer rendering
+    # Footer rendering - distinct styling and properly centered below bottom margin
     fig.add_artist(Line2D([0.14, 0.86], [0.035], transform=fig.transFigure, color=GRID, linewidth=2.0))
     fig.text(0.5, 0.012, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
              fontsize=13, color=SLATE, ha='center', fontweight='bold')
@@ -1283,6 +1283,13 @@ MOBILE_INCHES_PER_RATIO_UNIT = 6.126
 MOBILE_TOP = 0.92
 MOBILE_BOTTOM = 0.065
 MOBILE_MIN_HEIGHT_IN = 14.0
+
+
+def _shorten_dt(val):
+    try:
+        return pd.to_datetime(val).strftime('%d-%b %H:%M')
+    except Exception:
+        return str(val)
 
 
 def draw_kpi_cards_mobile(fig, gs_cell, summary):
