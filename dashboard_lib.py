@@ -696,8 +696,9 @@ def build_summary(results, total_wells_expected=None, miscommunication_wells=Non
 
 def draw_kpi_cards(fig, gs_cell, summary):
     settings = summary.get('design_settings', {})
-    top_pad = settings.get('kpi_space', 0.02)
-    bot_pad = settings.get('kpi_bottom_space', 0.02)
+    top_pad = settings.get('kpi_top_pad', 0.05)
+    mid_pad = settings.get('kpi_space', 0.05)
+    bot_pad = settings.get('kpi_bottom_space', 0.05)
     
     ax = fig.add_subplot(gs_cell)
     ax.axis('off')
@@ -734,13 +735,12 @@ def draw_kpi_cards(fig, gs_cell, summary):
 
     NOTE_ROW_H = 0.20 
     
-    # Precise dynamic scaling for the bounds so it spans precisely
-    # top limit remains above cards (1.05) and bottom limit extends exactly below notes
+    # Exact dynamic limits mapping slider inputs to physical bounds
     if notes:
-        total_notes_height = top_pad + (len(notes) * NOTE_ROW_H) + bot_pad
-        ax.set_ylim(0.08 - total_notes_height, 1.05)
+        total_notes_height = mid_pad + (len(notes) * NOTE_ROW_H)
+        ax.set_ylim(0.08 - total_notes_height - bot_pad, 1.0 + top_pad)
     else:
-        ax.set_ylim(-0.05, 1.05)
+        ax.set_ylim(0.08 - bot_pad, 1.0 + top_pad)
         
     ax.set_xlim(0, n)
     card_w, gap = 0.88, 0.12
@@ -763,8 +763,7 @@ def draw_kpi_cards(fig, gs_cell, summary):
                 color=label_color, ha='center', va='center', zorder=3)
 
     for i, (text, color, bg) in enumerate(notes):
-        # Anchor top down from bottom of cards (y=0.08)
-        note_y = 0.08 - top_pad - (i * NOTE_ROW_H) - (NOTE_ROW_H / 2)
+        note_y = 0.08 - mid_pad - (i * NOTE_ROW_H) - (NOTE_ROW_H / 2)
         ax.text(0.01, note_y, '\u26a0 ' + text, va='center',
                 fontsize=12, fontweight='bold', color=color, ha='left',
                 bbox=dict(facecolor=bg, edgecolor=color, boxstyle='round,pad=0.5'))
@@ -789,7 +788,7 @@ def draw_table(fig, gs_cell, df, columns, title, accent, empty_msg, max_rows=15,
         cell_text.append(wrapped_row)
         
     total_lines = sum(max(str(val).count('\n') + 1 for val in row) for row in cell_text) + 1
-    row_h = 0.16 if is_mobile else 0.12 
+    row_h = 0.18 if is_mobile else 0.15 
     table_h = min(0.95, row_h * total_lines)
     bottom = 0.95 - table_h
 
@@ -837,11 +836,10 @@ def draw_shutdown_count_bar(fig, gs_cell, shutdown_count_df, summary, is_mobile=
 
     shown = shutdown_count_df.head(15).iloc[::-1]
 
-    # Dynamically inject the user's preferred offset
     settings = summary.get('design_settings', {})
-    offset = settings.get('mobile_sd_offset', -0.17) if is_mobile else settings.get('desktop_sd_offset', -0.19)
+    margin = settings.get('mobile_sd_margin', 0.17) if is_mobile else settings.get('desktop_sd_margin', 0.21)
     
-    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[abs(offset), 1.0 - abs(offset)], wspace=0.02)
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[margin, 1.0 - margin], wspace=0.0)
     ax = fig.add_subplot(gs_inner[1])
     
     ax.set_facecolor(BG_PANEL)
@@ -863,9 +861,9 @@ def draw_shutdown_count_bar(fig, gs_cell, shutdown_count_df, summary, is_mobile=
     ax.set_yticks(range(len(wells)))
     ax.set_yticklabels([])
     
-    # Well names positioned using standard axis coordinates to guarantee uniform alignment
+    # Text hugs the bars (x=-0.02 in axis coords) and draws backwards to utilize the margin
     for i, w in enumerate(wells):
-        ax.text(offset, i, w, ha='left', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
+        ax.text(-0.02, i, w, ha='right', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
     
     for i, v in enumerate(shown['Shutdown Count'].values):
         ax.text(v + shown['Shutdown Count'].max() * 0.02, i, str(int(v)), va='center',
@@ -881,9 +879,9 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
     outer_ax = fig.add_subplot(gs_cell)
     outer_ax.axis('off')
     title_fs = 19 if is_mobile else 16
-    pad_val = 14 if is_mobile else 10
+    pad_val = 30 if is_mobile else 20 # Increased pad for cleaner legend headroom
     outer_ax.set_title(
-        f'Motor Temp Increase (> {thresh}\u00b0F, still up at 7AM)',
+        f'Sustained Motor Temp Increase (> {thresh}\u00b0F, still up at 7AM)',
         fontsize=title_fs, fontweight='bold', color=DARK_GREEN, pad=pad_val, loc='left'
     )
 
@@ -895,9 +893,9 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
     shown = temp_df.head(15).iloc[::-1]
 
     settings = summary.get('design_settings', {})
-    offset = settings.get('mobile_temp_offset', -0.17) if is_mobile else settings.get('desktop_temp_offset', -0.19)
+    margin = settings.get('mobile_temp_margin', 0.17) if is_mobile else settings.get('desktop_temp_margin', 0.21)
     
-    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[abs(offset), 1.0 - abs(offset)], wspace=0.02)
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[margin, 1.0 - margin], wspace=0.0)
     ax = fig.add_subplot(gs_inner[1])
     
     ax.set_facecolor(BG_PANEL)
@@ -920,7 +918,7 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
     ax.set_yticks(range(len(wells)))
     ax.set_yticklabels([])
     for i, w in enumerate(wells):
-        ax.text(offset, i, w, ha='left', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
+        ax.text(-0.02, i, w, ha='right', va='center', transform=ax.get_yaxis_transform(), fontsize=13 if is_mobile else 11, color=SLATE)
 
     for i, (b, r) in enumerate(zip(baseline.values, rise.values)):
         ax.text(b * 0.5, i, f'{b:.1f}\u00b0F', va='center', ha='center',
@@ -928,12 +926,12 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
         ax.text(b + r + max(baseline + rise) * 0.015, i, f'+{r:.1f}\u00b0F', va='center',
                 fontweight='bold', fontsize=14 if is_mobile else 11.5, color=RED)
 
-    # Force internal vertical bounds much higher so legend embeds cleanly without crossing bars/borders
-    ax.set_ylim(-0.5, len(wells) - 0.5 + 1.8)
+    # Force strict top padding in data coordinates so the legend cleanly fits above the top bar inside the axis grid
+    ax.set_ylim(-0.5, len(wells) - 0.5 + 2.0)
     ax.set_xlim(0, (baseline + rise).max() * 1.15)
     ax.set_xlabel('Motor Temperature (\u00b0F)', fontsize=14 if is_mobile else 12, color=SLATE)
     
-    # Legend embedded internally inside the top right of the chart
+    # Legend embedded directly inside the top right corner of the chart safely away from lines
     ax.legend(loc='upper right', bbox_to_anchor=(0.99, 0.99), ncol=2, frameon=False, labelcolor=SLATE)
 
 
@@ -980,15 +978,18 @@ def draw_reason_pie(fig, gs_cell, reason_counts, summary, max_slices=8, is_mobil
     ax.axis('off')
     if is_mobile: ax_legend.axis('off')
 
+    # Apply physical offset directly to pie coordinates
     wedges, _, autotexts = ax.pie(
         counts.values, colors=colors, autopct=lambda p: f'{p:.0f}%' if p >= 4 else '',
         startangle=90, pctdistance=0.60, radius=1.35 if is_mobile else 0.95,
+        center=(poffset * 2.5, 0),
         wedgeprops=dict(edgecolor='white', linewidth=1.5),
         textprops=dict(color='white', fontweight='bold', fontsize=13 if is_mobile else 10.5),
     )
     
     wrapped_labels = [textwrap.fill(f'{name}  ({int(val)})', width=30) for name, val in zip(counts.index, counts.values)]
     
+    # Legend dynamically follows pie
     if is_mobile:
         ax_legend.legend(wedges, wrapped_labels, loc='center left', bbox_to_anchor=(0.0 + poffset, 0.5), fontsize=13, frameon=False, labelcolor=SLATE)
     else:
@@ -1008,8 +1009,6 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
         return
 
     n_wells = len(vx_df)
-    
-    # Subdivide into 1 row for the title + 1 row for each well
     gs_inner = gs_cell.subgridspec(n_wells + 1, 1, height_ratios=[0.1] + [1]*n_wells, hspace=0.3)
     
     title_ax = fig.add_subplot(gs_inner[0])
@@ -1050,7 +1049,7 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
         if i < n_wells - 1:
             ax.tick_params(labelbottom=False)
             
-    # Draw threshold legend on the first chart
+    # Draw threshold legend cleanly out of the way on the first line chart
     first_ax = fig.axes[-n_wells]
     first_ax.plot([], [], color=RED, linestyle='--', label=f'Threshold ({thresh}G)')
     first_ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.25), ncol=1, frameon=False, labelcolor=SLATE)
@@ -1091,7 +1090,7 @@ def compute_row_height_ratios(summary):
     ratio_kpi = 0.35 + note_lines * 0.06
     ratio_shutdown = min(1.35, max(0.35, 0.30 + 0.0525 * n_sd))
     ratio_bar_pie = min(1.00, max(0.55, 0.50 + 0.0333 * n_bar))
-    ratio_vx = max(0.40, 0.1 + n_vx * 0.25)
+    ratio_vx = max(0.40, 0.1 + n_vx * 0.18) # Shorter charts per well
     ratio_pip = min(1.05, max(0.40, 0.30 + 0.0625 * n_pip))
     ratio_temp = min(1.00, max(0.35, 0.30 + 0.0333 * n_temp))
     return [ratio_kpi, ratio_shutdown, ratio_bar_pie, ratio_vx, ratio_pip, ratio_temp]
@@ -1111,7 +1110,6 @@ def draw_section_dividers(fig, gs, summary):
     settings = summary.get('design_settings', {})
     padding = settings.get('div_pad', 0.1)
 
-    # Exclude drawing a dotted line under the very last cell
     for row in range(len(tops) - 1):
         y_mid = (bottoms[row] + tops[row + 1]) / 2.0
 
@@ -1179,7 +1177,7 @@ def build_dashboard_figure(summary, report_date, output_png):
 
     draw_motor_temp_bar(fig, gs[5, :], summary['temp_df'], summary, is_mobile=False)
 
-    # Footer rendering uses dedicated user offset and spans strictly to right limits
+    # Footer rendering
     fig.add_artist(Line2D([0.14, 0.86], [footer_y], transform=fig.transFigure, color=GRID, linewidth=2.0))
     fig.text(0.5, footer_y - 0.02, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
              fontsize=13, color=SLATE, ha='center', fontweight='bold')
@@ -1333,8 +1331,9 @@ def _shorten_dt(val):
 
 def draw_kpi_cards_mobile(fig, gs_cell, summary):
     settings = summary.get('design_settings', {})
-    top_pad = settings.get('kpi_space', 0.02)
-    bot_pad = settings.get('kpi_bottom_space', 0.02)
+    top_pad = settings.get('kpi_top_pad', 0.05)
+    mid_pad = settings.get('kpi_space', 0.05)
+    bot_pad = settings.get('kpi_bottom_space', 0.05)
 
     ax = fig.add_subplot(gs_cell)
     ax.axis('off')
@@ -1372,10 +1371,10 @@ def draw_kpi_cards_mobile(fig, gs_cell, summary):
     NOTE_ROW_H = 0.20
     
     if notes:
-        total_notes_height = top_pad + (len(notes) * NOTE_ROW_H) + bot_pad
-        ax.set_ylim(0.08 - total_notes_height, 1.05)
+        total_notes_height = mid_pad + (len(notes) * NOTE_ROW_H)
+        ax.set_ylim(0.08 - total_notes_height - bot_pad, 1.0 + top_pad)
     else:
-        ax.set_ylim(-0.05, 1.05)
+        ax.set_ylim(0.08 - bot_pad, 1.0 + top_pad)
         
     ax.set_xlim(0, n)
     card_w, gap = 0.88, 0.12
@@ -1398,7 +1397,7 @@ def draw_kpi_cards_mobile(fig, gs_cell, summary):
                 color=label_color, ha='center', va='center', zorder=3)
 
     for i, (text, color, bg) in enumerate(notes):
-        note_y = 0.08 - top_pad - (i * NOTE_ROW_H) - (NOTE_ROW_H / 2)
+        note_y = 0.08 - mid_pad - (i * NOTE_ROW_H) - (NOTE_ROW_H / 2)
         ax.text(0.01, note_y, '\u26a0 ' + text, va='center',
                 fontsize=14, fontweight='bold', color=color, ha='left',
                 bbox=dict(facecolor=bg, edgecolor=color, boxstyle='round,pad=0.5'))
@@ -1421,7 +1420,7 @@ def compute_row_height_ratios_mobile(summary):
     ratio_shutdown = min(1.55, max(0.32, 0.20 + 0.065 * n_sd))
     ratio_bar = min(1.05, max(0.38, 0.22 + 0.052 * n_bar))
     ratio_pie = min(1.05, max(0.52, 0.30 + 0.068 * n_pie))
-    ratio_vx = max(0.40, 0.1 + n_vx * 0.28)
+    ratio_vx = max(0.40, 0.1 + n_vx * 0.20)
     ratio_pip = min(1.05, max(0.32, 0.19 + 0.068 * n_pip))
     ratio_temp = min(1.20, max(0.45, 0.28 + 0.055 * n_temp))
     
@@ -1487,7 +1486,6 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
 
     draw_motor_temp_bar(fig, gs[6], summary['temp_df'], summary, is_mobile=True)
 
-    # Footer rendering
     fig.add_artist(Line2D([MOBILE_LEFT, MOBILE_RIGHT], [footer_y], transform=fig.transFigure, color=GRID, linewidth=2.0))
     fig.text(0.5, footer_y - 0.02, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
              fontsize=13.5, color=SLATE, ha='center', fontweight='bold')
