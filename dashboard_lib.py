@@ -40,10 +40,10 @@ VX_THRESHOLD_G = 2.0          # vibration alert threshold
 VX_GLITCH_CHECK_G = 5.5       # spikes at/above this need a nearby shutdown to be trusted
 VX_GLITCH_WINDOW_BACK = pd.Timedelta(minutes=15)   # tolerance before the spike
 VX_GLITCH_WINDOW_FWD = pd.Timedelta(hours=2)       # how long after the spike a shutdown still "counts"
-PIP_RISE_THRESHOLD_PSI = 15   # sustained PIP increasing-trend threshold
+PIP_RISE_THRESHOLD_PSI = 25.0   # sustained PIP increasing-trend threshold (Updated)
 IMPLAUSIBLE_TEMP_F = 50.0     # downhole temp reading below this = comm/scan glitch, not real
 PIP_BASELINE_WINDOW = pd.Timedelta(minutes=60)  # window used to establish start/end PIP levels
-TEMP_RISE_THRESHOLD_F = 5.0      # sustained motor-temp increasing-trend threshold
+TEMP_RISE_THRESHOLD_F = 3.0      # sustained motor-temp increasing-trend threshold (Updated)
 TEMP_BASELINE_WINDOW = pd.Timedelta(minutes=60)  # window used to establish start/end motor-temp levels
 TEMP_DECLINE_TOLERANCE_F = 0.5   # if temp has cooled by at least this much from its recent level, treat it as recovering (not sustained)
 VX_ACTIVE_THRESHOLD_G = 0.1   # fallback: Vx must be CHANGING and exceed this to count as active
@@ -1026,12 +1026,8 @@ def draw_shutdown_count_bar(fig, gs_cell, shutdown_count_df, max_wells=15):
 
     shown = shutdown_count_df.head(max_wells).iloc[::-1]
 
-    # The chart lives in the right column of a nested grid, with a
-    # reserved blank column on the left - this gives well-name tick labels
-    # guaranteed room to render inside the panel instead of spilling past
-    # its edge. (inset_axes doesn't reliably support categorical y-axes in
-    # this matplotlib version, so a subgridspec column is used instead.)
-    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.22, 0.78])
+    # Shifted to [0.08, 0.92] so bars align cleanly to the left margin
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.08, 0.92])
     ax = fig.add_subplot(gs_inner[0, 1])
     ax.set_facecolor(BG_PANEL)
     for spine in ['top', 'right']:
@@ -1078,7 +1074,8 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, max_wells=15):
 
     shown = temp_df.head(max_wells).iloc[::-1]
 
-    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.22, 0.78])
+    # Shifted to [0.08, 0.92] so bars align cleanly to the left margin
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.08, 0.92])
     ax = fig.add_subplot(gs_inner[0, 1])
     ax.set_facecolor(BG_PANEL)
     for spine in ['top', 'right']:
@@ -1101,6 +1098,11 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, max_wells=15):
     ax.barh(wells, rise, left=baseline, color=RED, zorder=3, edgecolor='white', linewidth=1, label='Sustained increase')
 
     for i, (b, r) in enumerate(zip(baseline.values, rise.values)):
+        # Write the base temperature inside the baseline bar
+        ax.text(b / 2, i, f'{b:.1f}\u00b0F', va='center', ha='center',
+                fontweight='bold', fontsize=10, color='white')
+        
+        # Write the total rise at the right-edge of the bar
         ax.text(b + r + max(baseline + rise) * 0.015, i, f'+{r:.1f}\u00b0F', va='center',
                 fontweight='bold', fontsize=11.5, color=RED)
 
@@ -1596,12 +1598,8 @@ def draw_shutdown_count_bar_mobile(fig, gs_cell, shutdown_count_df, max_wells=15
 
     shown = shutdown_count_df.head(max_wells).iloc[::-1]
 
-    # The chart lives in the right column of a nested grid, with a
-    # reserved blank column on the left - this gives well-name tick labels
-    # guaranteed room to render inside the panel instead of spilling past
-    # its edge. (inset_axes doesn't reliably support categorical y-axes in
-    # this matplotlib version, so a subgridspec column is used instead.)
-    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.28, 0.72])
+    # Shifted to [0.15, 0.85] so bars align cleanly to the left margin
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.15, 0.85])
     ax = fig.add_subplot(gs_inner[0, 1])
     ax.set_facecolor(BG_PANEL)
     for spine in ['top', 'right']:
@@ -1642,7 +1640,8 @@ def draw_motor_temp_bar_mobile(fig, gs_cell, temp_df, max_wells=15):
 
     shown = temp_df.head(max_wells).iloc[::-1]
 
-    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.28, 0.72])
+    # Shifted to [0.15, 0.85] so bars align cleanly to the left margin
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.15, 0.85])
     ax = fig.add_subplot(gs_inner[0, 1])
     ax.set_facecolor(BG_PANEL)
     for spine in ['top', 'right']:
@@ -1662,6 +1661,10 @@ def draw_motor_temp_bar_mobile(fig, gs_cell, temp_df, max_wells=15):
     ax.barh(wells, rise, left=baseline, color=RED, zorder=3, edgecolor='white', linewidth=1, label='Increase')
 
     for i, (b, r) in enumerate(zip(baseline.values, rise.values)):
+        # Base temp overlay for mobile
+        ax.text(b / 2, i, f'{b:.1f}\u00b0F', va='center', ha='center',
+                fontweight='bold', fontsize=12, color='white')
+        
         ax.text(b + r + max(baseline + rise) * 0.015, i, f'+{r:.1f}\u00b0F', va='center',
                 fontweight='bold', fontsize=14, color=RED)
 
