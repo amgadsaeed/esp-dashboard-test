@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.lines import Line2D
+import matplotlib.dates as mdates
 
 warnings.filterwarnings('ignore', message='Workbook contains no default style')
 
@@ -424,6 +425,7 @@ def find_vx_alerts(df, well_name, shutdown_starts):
         'Doubled & Still Doubled at 7AM': 'Yes' if doubling_hit else 'No',
         'Baseline Vx (G)': round(float(baseline), 3) if pd.notna(baseline) else None,
         'Current Vx (G)': round(float(current_level), 3) if pd.notna(current_level) else None,
+        'timeseries': df[[COL_TIMESTAMP, COL_VX]].dropna()
     }
 
 
@@ -715,9 +717,9 @@ def draw_kpi_cards(fig, gs, summary, report_date):
 
     kpi_values = [
         (str(summary['total']), 'TOTAL WELLS', DARK_GREEN),
-        (str(summary['running']), 'ACTIVE / RUNNING', LIGHT_GREEN),
-        (str(summary['stopped']), 'STOPPED', RED),
-        (str(summary['miscommunication']), 'MISCOMMUNICATION', PURPLE),
+        (str(summary['running']), 'ACTIVE / RUNNING WELLS', LIGHT_GREEN),
+        (str(summary['stopped']), 'STOPPED WELLS', RED),
+        (str(summary['miscommunication']), 'LOST COMMUNICATION', PURPLE),
     ]
     n = len(kpi_values)
 
@@ -734,7 +736,7 @@ def draw_kpi_cards(fig, gs, summary, report_date):
         preview = ', '.join(map(str, mc_wells[:10]))
         if len(mc_wells) > 10:
             preview += f" (+{len(mc_wells) - 10} more)"
-        notes.append((f"Miscommunication - no data since last day ({summary['miscommunication']}): {preview}",
+        notes.append((f"Lost Communication ({summary['miscommunication']}): {preview}",
                       PURPLE, '#f3e8ff'))
 
     if summary['no_data'] > 0:
@@ -743,8 +745,8 @@ def draw_kpi_cards(fig, gs, summary, report_date):
             preview += f" (+{len(summary['no_data_wells']) - 10} more)"
         notes.append((f"No Power/Status Data ({summary['no_data']}): {preview}", PURPLE, '#f3e8ff'))
 
-    NOTE_ROW_H = 0.30
-    ax.set_ylim(-NOTE_ROW_H * len(notes), 1)
+    NOTE_ROW_H = 0.28
+    ax.set_ylim(-NOTE_ROW_H * len(notes) - 0.05, 1)
     ax.set_xlim(0, n)
     card_w, gap = 0.88, 0.12
 
@@ -762,11 +764,11 @@ def draw_kpi_cards(fig, gs, summary, report_date):
                                      linewidth=0, facecolor=accent, zorder=2))
         ax.text(x0 + card_w / 2 + 0.02, 0.58, value, fontsize=38, fontweight='bold',
                 color=number_color, ha='center', va='center', zorder=3)
-        ax.text(x0 + card_w / 2 + 0.02, 0.24, label, fontsize=13.5, fontweight='bold',
+        ax.text(x0 + card_w / 2 + 0.02, 0.24, label, fontsize=11, fontweight='bold',
                 color=label_color, ha='center', va='center', zorder=3)
 
     for i, (text, color, bg) in enumerate(notes):
-        note_y = -0.11 - i * NOTE_ROW_H
+        note_y = -0.10 - i * NOTE_ROW_H
         ax.text(0.01, note_y, '\u26a0 ' + text,
                 fontsize=12, fontweight='bold', color=color, ha='left', va='top',
                 bbox=dict(facecolor=bg, edgecolor=color, boxstyle='round,pad=0.5'))
@@ -783,15 +785,14 @@ def draw_table(fig, gs_cell, df, columns, title, accent, empty_msg, max_rows=15,
 
     shown = df.head(max_rows).copy()
     
-    # Text Wrap Implementation to stop columns overlapping
     cell_text = []
     for row in shown[columns].astype(str).values:
-        wrapped_row = [textwrap.fill(str(val), width=22) for val in row]
+        wrapped_row = [textwrap.fill(str(val), width=25) for val in row]
         cell_text.append(wrapped_row)
         
-    n_rows = len(shown)
-    row_h = 0.14
-    table_h = min(0.95, row_h * (n_rows + 1))
+    total_lines = sum(max(str(val).count('\n') + 1 for val in row) for row in cell_text) + 1
+    row_h = 0.09
+    table_h = min(0.95, row_h * total_lines)
     bottom = 0.95 - table_h
 
     tbl = ax.table(cellText=cell_text, colLabels=columns, cellLoc='center',
@@ -801,7 +802,7 @@ def draw_table(fig, gs_cell, df, columns, title, accent, empty_msg, max_rows=15,
     tbl.set_fontsize(11)
 
     for (row, col), cell in tbl.get_celld().items():
-        cell.PAD = 0.05
+        cell.PAD = 0.06
         if row == 0:
             cell.set_linewidth(1)
             cell.set_edgecolor(GRID)
@@ -812,7 +813,7 @@ def draw_table(fig, gs_cell, df, columns, title, accent, empty_msg, max_rows=15,
             cell.set_text_props(color=NAVY)
             cell.set_edgecolor(GRID)
             cell.set_linewidth(1)
-            cell.visible_edges = 'closed' # Enforce all borders
+            cell.visible_edges = 'closed'
 
     if len(df) > max_rows:
         ax.text(0.02, bottom - 0.06, f'+ {len(df) - max_rows} more \u2014 see full detail workbook',
@@ -820,12 +821,13 @@ def draw_table(fig, gs_cell, df, columns, title, accent, empty_msg, max_rows=15,
 
 
 def draw_shutdown_count_bar(fig, gs_cell, shutdown_count_df, max_wells=15):
-    ax = fig.add_subplot(gs_cell)
-    ax.set_title('Total Shutdowns per Well', fontsize=16, fontweight='bold', color=DARK_GREEN, pad=10, loc='left')
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.22, 0.78])
+    ax = fig.add_subplot(gs_inner[0, 1])
+    ax.set_title('Total Shutdowns per Well', fontsize=16, fontweight='bold', color=DARK_GREEN, pad=10, loc='left', x=-0.282)
 
     if shutdown_count_df is None or shutdown_count_df.empty:
         ax.axis('off')
-        ax.text(0.02, 0.5, 'No shutdown events logged for this period.',
+        ax.text(-0.282, 0.5, 'No shutdown events logged for this period.',
                 fontsize=13, color=SLATE, transform=ax.transAxes)
         return
 
@@ -848,7 +850,10 @@ def draw_shutdown_count_bar(fig, gs_cell, shutdown_count_df, max_wells=15):
             zorder=3, edgecolor='white', linewidth=1)
     
     ax.set_yticks(range(len(wells)))
-    ax.set_yticklabels(wells)
+    ax.set_yticklabels([])
+    
+    for i, w in enumerate(wells):
+        ax.text(-0.282, i, w, ha='left', va='center', transform=ax.get_yaxis_transform(), fontsize=11, color=SLATE)
     
     for i, v in enumerate(shown['Shutdown Count'].values):
         ax.text(v + shown['Shutdown Count'].max() * 0.02, i, str(int(v)), va='center',
@@ -858,20 +863,21 @@ def draw_shutdown_count_bar(fig, gs_cell, shutdown_count_df, max_wells=15):
     ax.set_xlabel('Number of Shutdowns', fontsize=12, color=SLATE)
 
     if len(shutdown_count_df) > max_wells:
-        ax.text(0.0, -0.25, f'+ {len(shutdown_count_df) - max_wells} more wells \u2014 see detail workbook',
+        ax.text(-0.282, -0.25, f'+ {len(shutdown_count_df) - max_wells} more wells \u2014 see detail workbook',
                 fontsize=10.5, color=SLATE, style='italic', transform=ax.transAxes)
 
 
 def draw_motor_temp_bar(fig, gs_cell, temp_df, max_wells=15):
-    ax = fig.add_subplot(gs_cell)
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.22, 0.78])
+    ax = fig.add_subplot(gs_inner[0, 1])
     ax.set_title(
         f'Sustained Motor Temp Increase (> {TEMP_RISE_THRESHOLD_F}\u00b0F, still up at 7AM)',
-        fontsize=16, fontweight='bold', color=DARK_GREEN, pad=10, loc='left',
+        fontsize=16, fontweight='bold', color=DARK_GREEN, pad=10, loc='left', x=-0.282
     )
 
     if temp_df is None or temp_df.empty:
         ax.axis('off')
-        ax.text(0.02, 0.5, f'No wells showed a sustained motor-temp rise greater than {TEMP_RISE_THRESHOLD_F}\u00b0F.',
+        ax.text(-0.282, 0.5, f'No wells showed a sustained motor-temp rise greater than {TEMP_RISE_THRESHOLD_F}\u00b0F.',
                 fontsize=13, color=SLATE, transform=ax.transAxes)
         return
 
@@ -895,23 +901,23 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, max_wells=15):
     ax.barh(wells, rise, left=baseline, color=RED, zorder=3, edgecolor='white', linewidth=1, label='Sustained increase')
 
     ax.set_yticks(range(len(wells)))
-    ax.set_yticklabels(wells)
+    ax.set_yticklabels([])
+    for i, w in enumerate(wells):
+        ax.text(-0.282, i, w, ha='left', va='center', transform=ax.get_yaxis_transform(), fontsize=11, color=SLATE)
 
     for i, (b, r) in enumerate(zip(baseline.values, rise.values)):
         ax.text(b * 0.5, i, f'{b:.1f}\u00b0F', va='center', ha='center',
                 fontweight='bold', fontsize=10, color='white')
-        
         ax.text(b + r + max(baseline + rise) * 0.015, i, f'+{r:.1f}\u00b0F', va='center',
                 fontweight='bold', fontsize=11.5, color=RED)
 
     ax.set_xlim(0, (baseline + rise).max() * 1.15)
     ax.set_xlabel('Motor Temperature (\u00b0F)', fontsize=12, color=SLATE)
     
-    # Legend repositioned above chart on right side
     ax.legend(loc='lower right', bbox_to_anchor=(1.0, 1.02), ncol=2, frameon=False, labelcolor=SLATE)
 
     if len(temp_df) > max_wells:
-        ax.text(0.0, -0.25, f'+ {len(temp_df) - max_wells} more wells \u2014 see detail workbook',
+        ax.text(-0.282, -0.25, f'+ {len(temp_df) - max_wells} more wells \u2014 see detail workbook',
                 fontsize=10.5, color=SLATE, style='italic', transform=ax.transAxes)
 
 
@@ -935,7 +941,6 @@ def draw_reason_pie(fig, gs_cell, reason_counts, max_slices=8):
     palette = [DARK_GREEN, GREEN, LIGHT_GREEN, AMBER, RED, PURPLE, SLATE, '#0891b2', '#be185d']
     colors = [palette[i % len(palette)] for i in range(len(counts))]
 
-    # Reduced pctdistance from 0.78 to 0.60 to prevent numbers touching edges
     wedges, _, autotexts = ax.pie(
         counts.values, colors=colors, autopct=lambda p: f'{p:.0f}%' if p >= 4 else '',
         startangle=90, pctdistance=0.60, radius=0.95,
@@ -943,7 +948,6 @@ def draw_reason_pie(fig, gs_cell, reason_counts, max_slices=8):
         textprops=dict(color='white', fontweight='bold', fontsize=10.5),
     )
     
-    # Textwrap long items in the legend
     wrapped_labels = [textwrap.fill(f'{name}  ({int(val)})', width=30) for name, val in zip(counts.index, counts.values)]
     
     ax.legend(
@@ -951,6 +955,41 @@ def draw_reason_pie(fig, gs_cell, reason_counts, max_slices=8):
         loc='center left', bbox_to_anchor=(0.95, 0.5), fontsize=10, frameon=False,
         labelcolor=SLATE,
     )
+
+
+def draw_vx_line_chart(fig, gs_cell, vx_df):
+    ax = fig.add_subplot(gs_cell)
+    ax.set_title(f'High Vibration Alerts (Vx > {VX_THRESHOLD_G}G)', fontsize=16, fontweight='bold', color=DARK_GREEN, pad=10, loc='left')
+
+    if vx_df is None or vx_df.empty:
+        ax.axis('off')
+        ax.text(0.02, 0.5, f'No wells exceeded {VX_THRESHOLD_G}G.', fontsize=13, color=SLATE, transform=ax.transAxes)
+        return
+
+    ax.set_facecolor(BG_PANEL)
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['left', 'bottom']:
+        ax.spines[spine].set_color(GRID)
+    ax.tick_params(colors=SLATE, labelsize=11)
+    ax.grid(axis='y', color=GRID, linewidth=0.8, zorder=0)
+    ax.grid(axis='x', color=GRID, linewidth=0.8, zorder=0, alpha=0.5)
+
+    palette = sns.color_palette("Set1", len(vx_df))
+    max_y = VX_THRESHOLD_G
+    
+    for i, row in vx_df.iterrows():
+        ts = row['timeseries']
+        well = row['Well']
+        ax.plot(ts[COL_TIMESTAMP], ts[COL_VX], label=well, color=palette[i], linewidth=1.5)
+        max_y = max(max_y, ts[COL_VX].max())
+
+    ax.axhline(VX_THRESHOLD_G, color=RED, linestyle='--', linewidth=1.5, alpha=0.8, label=f'Threshold ({VX_THRESHOLD_G}G)')
+
+    ax.set_ylabel('Vibration (G)', fontsize=12, color=SLATE)
+    ax.set_ylim(0, max_y * 1.15)
+    ax.legend(loc='lower right', bbox_to_anchor=(1.0, 1.05), ncol=4, frameon=False, labelcolor=SLATE)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 
 
 def draw_logos(fig):
@@ -976,23 +1015,21 @@ def draw_logos(fig):
 def compute_row_height_ratios(summary):
     n_sd = min(len(summary['shutdown_df']), 20) if not summary['shutdown_df'].empty else 0
     n_bar = min(len(summary['shutdown_count_df']), 15) if not summary['shutdown_count_df'].empty else 0
-    n_vx = min(len(summary['vx_df']), 12) if not summary['vx_df'].empty else 0
     n_pip = min(len(summary['pip_df']), 12) if not summary['pip_df'].empty else 0
     n_temp = min(len(summary['temp_df']), 15) if not summary['temp_df'].empty else 0
-    n_detail = max(n_vx, n_pip)
 
     note_lines = (
         (1 if summary.get('stopped', 0) > 0 else 0)
         + (1 if summary.get('miscommunication', 0) > 0 and summary.get('miscommunication_wells') else 0)
         + (1 if summary.get('no_data', 0) > 0 else 0)
     )
-    # Reduced multiplier for note gaps to pull up the bottom layout divider
-    ratio_kpi = 0.35 + note_lines * 0.12
+    ratio_kpi = 0.35 + note_lines * 0.06
     ratio_shutdown = min(1.35, max(0.35, 0.30 + 0.0525 * n_sd))
     ratio_bar_pie = min(1.00, max(0.55, 0.50 + 0.0333 * n_bar))
-    ratio_detail = min(1.05, max(0.40, 0.30 + 0.0625 * n_detail))
+    ratio_vx = 0.85 # Static height for line chart
+    ratio_pip = min(1.05, max(0.40, 0.30 + 0.0625 * n_pip))
     ratio_temp = min(1.00, max(0.35, 0.30 + 0.0333 * n_temp))
-    return [ratio_kpi, ratio_shutdown, ratio_bar_pie, ratio_detail, ratio_temp]
+    return [ratio_kpi, ratio_shutdown, ratio_bar_pie, ratio_vx, ratio_pip, ratio_temp]
 
 
 INCHES_PER_RATIO_UNIT = 6.126
@@ -1028,8 +1065,7 @@ def build_dashboard_figure(summary, report_date, output_png):
 
     fig = plt.figure(figsize=(19, fig_height), facecolor='white')
 
-    # Increased wspace from 0.18 to 0.25 to prevent overlapping titles/tables
-    gs = fig.add_gridspec(5, 2, height_ratios=height_ratios, hspace=0.45, wspace=0.25,
+    gs = fig.add_gridspec(6, 2, height_ratios=height_ratios, hspace=0.45, wspace=0.25,
                            left=0.14, right=0.86, top=GRIDSPEC_TOP, bottom=GRIDSPEC_BOTTOM)
 
     draw_section_dividers(fig, gs)
@@ -1041,7 +1077,7 @@ def build_dashboard_figure(summary, report_date, output_png):
 
     draw_logos(fig)
 
-    draw_kpi_cards(fig, gs, summary, report_date)
+    draw_kpi_cards(fig, gs[0, :], summary, report_date)
 
     draw_table(
         fig, gs[1, :], summary['shutdown_df'],
@@ -1054,32 +1090,24 @@ def build_dashboard_figure(summary, report_date, output_png):
     draw_shutdown_count_bar(fig, gs[2, 0], summary['shutdown_count_df'])
     draw_reason_pie(fig, gs[2, 1], summary['reason_counts'])
 
-    vx_df = summary['vx_df']
-    vx_col_name = f'Readings > {VX_THRESHOLD_G}G'
-    vx_cols = ['Well', 'Max Vx (G)', vx_col_name, 'Time of Max'] if not vx_df.empty else []
-    
-    draw_table(
-        fig, gs[3, 0], vx_df,
-        columns=vx_cols,
-        title=f'High Vibration Alerts (Vx > {VX_THRESHOLD_G}G)',
-        accent=LIGHT_GREEN, empty_msg=f'No wells exceeded {VX_THRESHOLD_G}G.',
-        max_rows=12, col_widths=[0.20, 0.20, 0.30, 0.30],
-    )
+    draw_vx_line_chart(fig, gs[3, :], summary['vx_df'])
 
     pip_df = summary['pip_df']
     pip_cols = ['Well', 'PIP-Yesterday 7AM (psi)', 'PIP-Today 7AM (psi)', 'Net Rise (psi)'] if not pip_df.empty else []
     draw_table(
-        fig, gs[3, 1], pip_df,
+        fig, gs[4, :], pip_df,
         columns=pip_cols,
-        title=f'Rising PIP Trends (> {PIP_RISE_THRESHOLD_PSI} psi)',
+        title=f'Rising PIP Trends (> {PIP_RISE_THRESHOLD_PSI} psi sustained, no shutdowns)',
         accent=LIGHT_GREEN, empty_msg=f'No wells showed a sustained PIP rise greater than {PIP_RISE_THRESHOLD_PSI} psi.',
-        max_rows=12, col_widths=[0.22, 0.28, 0.28, 0.22],
+        max_rows=12, col_widths=[0.20, 0.30, 0.30, 0.20],
     )
 
-    fig.text(0.08, 0.03, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  \u2022  Generated by ProductionLink Team at TAM OIL',
-              fontsize=11, color=SLATE, ha='left', style='italic')
+    draw_motor_temp_bar(fig, gs[5, :], summary['temp_df'])
 
-    draw_motor_temp_bar(fig, gs[4, :], summary['temp_df'])
+    # Footer rendering
+    fig.add_artist(Line2D([0.14, 0.86], [0.038], transform=fig.transFigure, color=GRID, linewidth=1.5))
+    fig.text(0.5, 0.015, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
+             fontsize=12, color=SLATE, ha='center', fontweight='bold')
 
     plt.savefig(output_png, dpi=150, facecolor='white', bbox_inches='tight')
     plt.close(fig)
@@ -1091,10 +1119,13 @@ def export_excel(summary, results, output_xlsx):
         (summary['shutdown_df'] if not summary['shutdown_df'].empty else pd.DataFrame(
             columns=['Well', 'Reason', 'Shutdown Start', 'Shutdown End', 'Downtime (hrs)', 'Ongoing']
         )).to_excel(writer, sheet_name='Shutdown Events', index=False)
-        (summary['vx_df'] if not summary['vx_df'].empty else pd.DataFrame(
+        
+        vx_export = summary['vx_df'].drop(columns=['timeseries'], errors='ignore') if not summary['vx_df'].empty else pd.DataFrame(
             columns=['Well', 'Max Vx (G)', 'Time of Max', f'Readings > {VX_THRESHOLD_G}G',
                      'Doubled & Still Doubled at 7AM', 'Baseline Vx (G)', 'Current Vx (G)']
-        )).to_excel(writer, sheet_name=f'High Vibration (Vx gt {VX_THRESHOLD_G}G)', index=False)
+        )
+        vx_export.to_excel(writer, sheet_name=f'High Vibration (Vx gt {VX_THRESHOLD_G}G)', index=False)
+        
         (summary['pip_df'] if not summary['pip_df'].empty else pd.DataFrame(
             columns=['Well', 'PIP-Yesterday 7AM (psi)', 'PIP-Today 7AM (psi)', 'Net Rise (psi)',
                      'Peak PIP (psi)', 'Peak Time']
@@ -1207,8 +1238,7 @@ def build_whatsapp_message(summary, report_date):
 MOBILE_FIG_WIDTH_IN = 10.5
 MOBILE_LEFT, MOBILE_RIGHT = 0.09, 0.91
 MOBILE_INCHES_PER_RATIO_UNIT = 6.126
-MOBILE_TOP = 0.93
-# Increased bottom to prevent generate date from being cut off
+MOBILE_TOP = 0.89
 MOBILE_BOTTOM = 0.065
 MOBILE_MIN_HEIGHT_IN = 14.0
 
@@ -1226,9 +1256,9 @@ def draw_kpi_cards_mobile(fig, gs_cell, summary):
 
     kpi_values = [
         (str(summary['total']), 'TOTAL WELLS', DARK_GREEN),
-        (str(summary['running']), 'ACTIVE / RUNNING', LIGHT_GREEN),
-        (str(summary['stopped']), 'STOPPED', RED),
-        (str(summary['miscommunication']), 'MISCOMMUNICATION', PURPLE),
+        (str(summary['running']), 'ACTIVE / RUNNING WELLS', LIGHT_GREEN),
+        (str(summary['stopped']), 'STOPPED WELLS', RED),
+        (str(summary['miscommunication']), 'LOST COMMUNICATION', PURPLE),
     ]
     n = len(kpi_values)
 
@@ -1245,7 +1275,7 @@ def draw_kpi_cards_mobile(fig, gs_cell, summary):
         preview = ', '.join(map(str, mc_wells[:8]))
         if len(mc_wells) > 8:
             preview += f" (+{len(mc_wells) - 8} more)"
-        notes.append((f"Miscommunication - no data since last day ({summary['miscommunication']}): {preview}",
+        notes.append((f"Lost Communication ({summary['miscommunication']}): {preview}",
                       PURPLE, '#f3e8ff'))
 
     if summary['no_data'] > 0:
@@ -1255,7 +1285,7 @@ def draw_kpi_cards_mobile(fig, gs_cell, summary):
         notes.append((f"No Power/Status Data ({summary['no_data']}): {preview}", PURPLE, '#f3e8ff'))
 
     NOTE_ROW_H = 0.30
-    ax.set_ylim(-NOTE_ROW_H * len(notes), 1)
+    ax.set_ylim(-NOTE_ROW_H * len(notes) - 0.05, 1)
     ax.set_xlim(0, n)
     card_w, gap = 0.88, 0.12
 
@@ -1273,11 +1303,11 @@ def draw_kpi_cards_mobile(fig, gs_cell, summary):
                                      linewidth=0, facecolor=accent, zorder=2))
         ax.text(x0 + card_w / 2 + 0.02, 0.56, value, fontsize=27, fontweight='bold',
                 color=number_color, ha='center', va='center', zorder=3)
-        ax.text(x0 + card_w / 2 + 0.02, 0.23, label, fontsize=9.7, fontweight='bold',
+        ax.text(x0 + card_w / 2 + 0.02, 0.23, label, fontsize=9.2, fontweight='bold',
                 color=label_color, ha='center', va='center', zorder=3)
 
     for i, (text, color, bg) in enumerate(notes):
-        note_y = -0.11 - i * NOTE_ROW_H
+        note_y = -0.10 - i * NOTE_ROW_H
         ax.text(0.01, note_y, '\u26a0 ' + text,
                 fontsize=14, fontweight='bold', color=color, ha='left', va='top',
                 bbox=dict(facecolor=bg, edgecolor=color, boxstyle='round,pad=0.5'),
@@ -1309,12 +1339,12 @@ def draw_table_mobile(fig, gs_cell, df, columns, title, accent, empty_msg, max_r
     
     cell_text = []
     for row in shown[columns].astype(str).values:
-        wrapped_row = [textwrap.fill(str(val), width=22) for val in row]
+        wrapped_row = [textwrap.fill(str(val), width=25) for val in row]
         cell_text.append(wrapped_row)
         
-    n_rows = len(shown)
-    row_h = 0.19
-    table_h = min(0.95, row_h * (n_rows + 1))
+    total_lines = sum(max(str(val).count('\n') + 1 for val in row) for row in cell_text) + 1
+    row_h = 0.12
+    table_h = min(0.95, row_h * total_lines)
     bottom = 0.95 - table_h
 
     ax.add_patch(FancyBboxPatch((0, bottom), 1, table_h,
@@ -1329,7 +1359,7 @@ def draw_table_mobile(fig, gs_cell, df, columns, title, accent, empty_msg, max_r
     tbl.set_fontsize(13.5)
 
     for (row, col), cell in tbl.get_celld().items():
-        cell.PAD = 0.05
+        cell.PAD = 0.06
         if row == 0:
             cell.set_linewidth(1)
             cell.set_edgecolor(GRID)
@@ -1340,7 +1370,7 @@ def draw_table_mobile(fig, gs_cell, df, columns, title, accent, empty_msg, max_r
             cell.set_text_props(color=NAVY)
             cell.set_edgecolor(GRID)
             cell.set_linewidth(1)
-            cell.visible_edges = 'closed' # Enforce all borders
+            cell.visible_edges = 'closed'
 
     if len(df) > max_rows:
         ax.text(0.02, bottom - 0.05, f'+ {len(df) - max_rows} more \u2014 see full detail workbook',
@@ -1348,12 +1378,13 @@ def draw_table_mobile(fig, gs_cell, df, columns, title, accent, empty_msg, max_r
 
 
 def draw_shutdown_count_bar_mobile(fig, gs_cell, shutdown_count_df, max_wells=15):
-    ax = fig.add_subplot(gs_cell)
-    ax.set_title('Total Shutdowns per Well', fontsize=19, fontweight='bold', color=DARK_GREEN, pad=14, loc='left')
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.28, 0.72])
+    ax = fig.add_subplot(gs_inner[0, 1])
+    ax.set_title('Total Shutdowns per Well', fontsize=19, fontweight='bold', color=DARK_GREEN, pad=14, loc='left', x=-0.388)
 
     if shutdown_count_df is None or shutdown_count_df.empty:
         ax.axis('off')
-        ax.text(0.02, 0.5, 'No shutdown events logged for this period.',
+        ax.text(-0.388, 0.5, 'No shutdown events logged for this period.',
                 fontsize=15, color=SLATE, transform=ax.transAxes)
         return
 
@@ -1376,7 +1407,9 @@ def draw_shutdown_count_bar_mobile(fig, gs_cell, shutdown_count_df, max_wells=15
             zorder=3, edgecolor='white', linewidth=1)
     
     ax.set_yticks(range(len(wells)))
-    ax.set_yticklabels(wells)
+    ax.set_yticklabels([])
+    for i, w in enumerate(wells):
+        ax.text(-0.388, i, w, ha='left', va='center', transform=ax.get_yaxis_transform(), fontsize=13, color=SLATE)
     
     for i, v in enumerate(shown['Shutdown Count'].values):
         ax.text(v + shown['Shutdown Count'].max() * 0.02, i, str(int(v)), va='center',
@@ -1386,21 +1419,21 @@ def draw_shutdown_count_bar_mobile(fig, gs_cell, shutdown_count_df, max_wells=15
     ax.set_xlabel('Number of Shutdowns', fontsize=14, color=SLATE)
 
     if len(shutdown_count_df) > max_wells:
-        ax.text(0.0, -0.25, f'+ {len(shutdown_count_df) - max_wells} more wells \u2014 see detail workbook',
+        ax.text(-0.388, -0.25, f'+ {len(shutdown_count_df) - max_wells} more wells \u2014 see detail workbook',
                 fontsize=12, color=SLATE, style='italic', transform=ax.transAxes)
 
 
 def draw_motor_temp_bar_mobile(fig, gs_cell, temp_df, max_wells=15):
-    ax = fig.add_subplot(gs_cell)
-    # Increased title pad to prevent touching upper legend
+    gs_inner = gs_cell.subgridspec(1, 2, width_ratios=[0.28, 0.72])
+    ax = fig.add_subplot(gs_inner[0, 1])
     ax.set_title(
         f'Motor Temp Increase (> {TEMP_RISE_THRESHOLD_F}\u00b0F, still up at 7AM)',
-        fontsize=19, fontweight='bold', color=DARK_GREEN, pad=25, loc='left',
+        fontsize=19, fontweight='bold', color=DARK_GREEN, pad=30, loc='left', x=-0.388
     )
 
     if temp_df is None or temp_df.empty:
         ax.axis('off')
-        ax.text(0.02, 0.5, f'No wells showed a sustained motor-temp rise greater than {TEMP_RISE_THRESHOLD_F}\u00b0F.',
+        ax.text(-0.388, 0.5, f'No wells showed a sustained motor-temp rise greater than {TEMP_RISE_THRESHOLD_F}\u00b0F.',
                 fontsize=15, color=SLATE, transform=ax.transAxes)
         return
 
@@ -1424,7 +1457,9 @@ def draw_motor_temp_bar_mobile(fig, gs_cell, temp_df, max_wells=15):
     ax.barh(wells, rise, left=baseline, color=RED, zorder=3, edgecolor='white', linewidth=1, label='Increase')
 
     ax.set_yticks(range(len(wells)))
-    ax.set_yticklabels(wells)
+    ax.set_yticklabels([])
+    for i, w in enumerate(wells):
+        ax.text(-0.388, i, w, ha='left', va='center', transform=ax.get_yaxis_transform(), fontsize=13, color=SLATE)
 
     for i, (b, r) in enumerate(zip(baseline.values, rise.values)):
         ax.text(b * 0.5, i, f'{b:.1f}\u00b0F', va='center', ha='center',
@@ -1436,11 +1471,10 @@ def draw_motor_temp_bar_mobile(fig, gs_cell, temp_df, max_wells=15):
     ax.set_xlim(0, (baseline + rise).max() * 1.15)
     ax.set_xlabel('Motor Temperature (\u00b0F)', fontsize=14, color=SLATE)
     
-    # Legend pushed upwards via bbox_to_anchor to avoid covering bars
-    ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.15), ncol=2, frameon=False, labelcolor=SLATE)
+    ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.18), ncol=2, frameon=False, labelcolor=SLATE)
 
     if len(temp_df) > max_wells:
-        ax.text(0.0, -0.25, f'+ {len(temp_df) - max_wells} more wells \u2014 see detail workbook',
+        ax.text(-0.388, -0.25, f'+ {len(temp_df) - max_wells} more wells \u2014 see detail workbook',
                 fontsize=12, color=SLATE, style='italic', transform=ax.transAxes)
 
 
@@ -1486,10 +1520,44 @@ def draw_reason_pie_mobile(fig, gs_cell, reason_counts, max_slices=8):
     )
 
 
+def draw_vx_line_chart_mobile(fig, gs_cell, vx_df):
+    ax = fig.add_subplot(gs_cell)
+    ax.set_title(f'High Vibration Alerts (Vx > {VX_THRESHOLD_G}G)', fontsize=19, fontweight='bold', color=DARK_GREEN, pad=10, loc='left')
+
+    if vx_df is None or vx_df.empty:
+        ax.axis('off')
+        ax.text(0.02, 0.5, f'No wells exceeded {VX_THRESHOLD_G}G.', fontsize=15, color=SLATE, transform=ax.transAxes)
+        return
+
+    ax.set_facecolor(BG_PANEL)
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['left', 'bottom']:
+        ax.spines[spine].set_color(GRID)
+    ax.tick_params(colors=SLATE, labelsize=13)
+    ax.grid(axis='y', color=GRID, linewidth=0.8, zorder=0)
+    ax.grid(axis='x', color=GRID, linewidth=0.8, zorder=0, alpha=0.5)
+
+    palette = sns.color_palette("Set1", len(vx_df))
+    max_y = VX_THRESHOLD_G
+    
+    for i, row in vx_df.iterrows():
+        ts = row['timeseries']
+        well = row['Well']
+        ax.plot(ts[COL_TIMESTAMP], ts[COL_VX], label=well, color=palette[i], linewidth=2.0)
+        max_y = max(max_y, ts[COL_VX].max())
+
+    ax.axhline(VX_THRESHOLD_G, color=RED, linestyle='--', linewidth=1.8, alpha=0.8, label=f'Threshold ({VX_THRESHOLD_G}G)')
+
+    ax.set_ylabel('Vibration (G)', fontsize=14, color=SLATE)
+    ax.set_ylim(0, max_y * 1.15)
+    ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.10), ncol=2, frameon=False, labelcolor=SLATE)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+
+
 def compute_row_height_ratios_mobile(summary):
     n_sd = min(len(summary['shutdown_df']), 20) if not summary['shutdown_df'].empty else 0
     n_bar = min(len(summary['shutdown_count_df']), 15) if not summary['shutdown_count_df'].empty else 0
-    n_vx = min(len(summary['vx_df']), 12) if not summary['vx_df'].empty else 0
     n_pip = min(len(summary['pip_df']), 12) if not summary['pip_df'].empty else 0
     n_pie = min(len(summary['reason_counts']), 8) if len(summary['reason_counts']) else 0
     n_temp = min(len(summary['temp_df']), 15) if not summary['temp_df'].empty else 0
@@ -1499,11 +1567,11 @@ def compute_row_height_ratios_mobile(summary):
         + (1 if summary.get('miscommunication', 0) > 0 and summary.get('miscommunication_wells') else 0)
         + (1 if summary.get('no_data', 0) > 0 else 0)
     )
-    ratio_kpi = 0.40 + note_lines * 0.15
+    ratio_kpi = 0.35 + note_lines * 0.07
     ratio_shutdown = min(1.55, max(0.32, 0.20 + 0.065 * n_sd))
     ratio_bar = min(1.05, max(0.38, 0.22 + 0.052 * n_bar))
     ratio_pie = min(1.05, max(0.52, 0.30 + 0.068 * n_pie))
-    ratio_vx = min(1.05, max(0.32, 0.19 + 0.068 * n_vx))
+    ratio_vx = 0.90
     ratio_pip = min(1.05, max(0.32, 0.19 + 0.068 * n_pip))
     ratio_temp = min(1.20, max(0.45, 0.28 + 0.055 * n_temp))
     
@@ -1516,14 +1584,14 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     fig_height = max(MOBILE_MIN_HEIGHT_IN, gridspec_in / (MOBILE_TOP - MOBILE_BOTTOM))
 
     fig = plt.figure(figsize=(MOBILE_FIG_WIDTH_IN, fig_height), facecolor='white')
-    gs = fig.add_gridspec(7, 1, height_ratios=height_ratios, hspace=0.60,
+    gs = fig.add_gridspec(8, 1, height_ratios=height_ratios + [0.01], hspace=0.60,
                            left=MOBILE_LEFT, right=MOBILE_RIGHT, top=MOBILE_TOP, bottom=MOBILE_BOTTOM)
 
     draw_section_dividers(fig, gs)
 
-    fig.text(0.5, 0.975, 'Daily ESP Surveillance Summary', fontsize=25, fontweight='bold',
+    fig.text(0.5, 0.965, 'Daily ESP Surveillance Summary', fontsize=25, fontweight='bold',
               color=DARK_GREEN, ha='center')
-    fig.text(0.5, 0.957, f'{summary["total"]} Wells  \u2022  {report_date}',
+    fig.text(0.5, 0.947, f'{summary["total"]} Wells  \u2022  {report_date}',
               fontsize=13.5, color=GREEN, ha='center')
 
     draw_logos_mobile(fig, fig_height)
@@ -1549,17 +1617,7 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     draw_shutdown_count_bar_mobile(fig, gs[2], summary['shutdown_count_df'])
     draw_reason_pie_mobile(fig, gs[3], summary['reason_counts'])
 
-    vx_df = summary['vx_df']
-    vx_col_name = f'Readings > {VX_THRESHOLD_G}G'
-    vx_cols = ['Well', 'Max Vx (G)', vx_col_name, 'Time of Max'] if not vx_df.empty else []
-    
-    draw_table_mobile(
-        fig, gs[4], vx_df,
-        columns=vx_cols,
-        title=f'High Vibration Alerts (Vx > {VX_THRESHOLD_G}G)',
-        accent=LIGHT_GREEN, empty_msg=f'No wells exceeded {VX_THRESHOLD_G}G.',
-        max_rows=12, col_widths=[0.25, 0.22, 0.25, 0.28],
-    )
+    draw_vx_line_chart_mobile(fig, gs[4], summary['vx_df'])
 
     pip_df = summary['pip_df']
     pip_cols = ['Well', 'PIP-Yesterday 7AM (psi)', 'PIP-Today 7AM (psi)', 'Net Rise (psi)'] if not pip_df.empty else []
@@ -1571,17 +1629,18 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
         max_rows=12, col_widths=[0.24, 0.28, 0.28, 0.20],
     )
 
-    # Lowered slightly via Y coordinate and ensured MOBILE_BOTTOM covers it
-    fig.text(0.5, 0.02, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  \u2022  ProductionLink Team, TAM OIL',
-              fontsize=10.5, color=SLATE, ha='center', style='italic')
-
     draw_motor_temp_bar_mobile(fig, gs[6], summary['temp_df'])
+
+    # Footer rendering
+    fig.add_artist(Line2D([MOBILE_LEFT, MOBILE_RIGHT], [0.045], transform=fig.transFigure, color=GRID, linewidth=1.5))
+    fig.text(0.5, 0.02, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
+             fontsize=11.5, color=SLATE, ha='center', fontweight='bold')
 
     plt.savefig(output_png, dpi=200, facecolor='white', bbox_inches='tight')
     plt.close(fig)
 
 
-MOBILE_LOGO_HEIGHT_IN = 0.58
+MOBILE_LOGO_HEIGHT_IN = 0.90
 MOBILE_LOGO_MAX_WIDTH_IN = 2.0
 
 
@@ -1594,8 +1653,8 @@ def _place_logo_mobile(fig, path, fig_height, side):
 
     w_frac = w_in / MOBILE_FIG_WIDTH_IN
     h_frac = h_in / fig_height
-    y0 = 0.975 - h_frac / 2
-    x0 = 0.05 if side == 'left' else (0.95 - w_frac)
+    y0 = 0.965 - h_frac / 2
+    x0 = 0.04 if side == 'left' else (0.96 - w_frac)
 
     ax_logo = fig.add_axes([x0, y0, w_frac, h_frac])
     ax_logo.imshow(img)
