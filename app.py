@@ -17,6 +17,8 @@ import os
 import shutil
 import tempfile
 import zipfile
+import requests  # <-- NEW
+import re        # <-- NEW
 from datetime import datetime
 
 import numpy as np
@@ -36,6 +38,7 @@ for key, default in [
     ("results", None),
     ("report_date", None),
     ("stage", "upload"),  # upload -> review -> done
+    ("viewing_history", None), # <-- NEW: Tracks the selected past run
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -43,13 +46,138 @@ for key, default in [
 st.title("ESP Field Dashboard")
 st.caption("Upload the field export ZIPs, review the auto-detected tables, then build the report.")
 
+# ==================================================================
+# HISTORY VIEWER MODE (Intercepts main UI)
+# ==================================================================
+if st.session_state.stage == "history" and st.session_state.viewing_history:
+    run_data = st.session_state.viewing_history
+    
+    col1, col2 = st.columns([3, 1])
+    col1.info("🕒 You are viewing a historical report loaded directly from GitHub.")
+    if col2.button("← Exit History Mode", use_container_width=True):
+        st.session_state.stage = "upload"
+        st.session_state.viewing_history = None
+        st.rerun()
+        
+    st.divider()
+    st.subheader("Historical Outputs")
+    
+    with st.spinner("Downloading report assets from GitHub..."):
+        desk_bytes = download_github_file(run_data.get('desktop')) if 'desktop' in run_data else None
+        mob_bytes = download_github_file(run_data.get('mobile')) if 'mobile' in run_data else None
+        txt_bytes = download_github_file(run_data.get('whatsapp')) if 'whatsapp' in run_data else None
+        xls_bytes = download_github_file(run_data.get('excel')) if 'excel' in run_data else None
+    
+    htab1, htab2, htab3 = st.tabs(["Desktop dashboard", "Mobile / WhatsApp", "WhatsApp message"])
+    
+    with htab1:
+        if desk_bytes:
+            st.image(desk_bytes, use_container_width=True)
+            st.download_button("Download desktop PNG", desk_bytes, file_name=os.path.basename(run_data['desktop']), mime="image/png")
+        else:
+            st.warning("Desktop image not found for this run.")
+            
+    with htab2:
+        if mob_bytes:
+            st.image(mob_bytes, width=420)
+            st.download_button("Download mobile PNG", mob_bytes, file_name=os.path.basename(run_data['mobile']), mime="image/png")
+        else:
+            st.warning("Mobile image not found for this run.")
+            
+    with htab3:
+        if txt_bytes:
+            txt_str = txt_bytes.decode('utf-8')
+            st.text_area("Message", txt_str, height=300, disabled=True)
+            st.download_button("Download message .txt", txt_str, file_name=os.path.basename(run_data['whatsapp']))
+        else:
+            st.warning("WhatsApp text not found for this run.")
+            
+    if xls_bytes:
+        st.download_button(
+            "Download Excel workbook", xls_bytes, file_name=os.path.basename(run_data['excel']),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        
+    st.stop() # Prevents Steps 1-4 from rendering while viewing history
+    
+# ==================================================================
+# STEP 1 - UPLOAD + PROCESS 
+# (Leave your existing Step 1 code right below here)
+# ==================================================================
+
 # ------------------------------------------------------------------
-# Sidebar: GitHub status
+# GitHub History Fetcher
+# ------------------------------------------------------------------
+@st.cache_data(ttl=60)
+def fetch_github_runs():
+    """Finds all previous dashboard runs saved in the repo."""
+    if not github_configured(): return {}
+    
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    
+    # Pull the entire repo tree recursively
+    url = f"https://api.github.com/repos/{repo}/git/trees/{branch}?recursive=1"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+    res = requests.get(url, headers=headers)
+    
+    runs = {}
+    if res.status_code == 200:
+        for f in res.json().get('tree', []):
+            # Look for files with the ESP_ prefix
+            if f['type'] == 'blob' and 'ESP_' in f['path']:
+                # Extract your timestamp format (YYYYMMDD_HHMMSS)
+                match = re.search(r'_(\d{8}_\d{6})\.', f['path'])
+                if match:
+                    ts = match.group(1)
+                    if ts not in runs: runs[ts] = {}
+                    
+                    # Group related files by timestamp
+                    if "WhatsApp" in f['path']: runs[ts]['whatsapp'] = f['path']
+                    elif "Summary" in f['path']: runs[ts]['excel'] = f['path']
+                    elif "Mobile" in f['path']: runs[ts]['mobile'] = f['path']
+                    elif "Dashboard" in f['path']: runs[ts]['desktop'] = f['path']
+    return runs
+
+@st.cache_data(ttl=3600)
+def download_github_file(path):
+    """Downloads raw file content securely using the GitHub API."""
+    repo = st.secrets["GITHUB_REPO"]
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={branch}"
+    headers = {"Authorization": f"Bearer {st.secrets['GITHUB_TOKEN']}", "Accept": "application/vnd.github.v3.raw"}
+    res = requests.get(url, headers=headers)
+    return res.content if res.status_code == 200 else None
+
+# ------------------------------------------------------------------
+# Sidebar: GitHub status & History
 # ------------------------------------------------------------------
 with st.sidebar:
     st.header("GitHub history")
     if github_configured():
-        st.success("Connected \u2014 reports are saved to GitHub automatically.")
+        st.success("Connected — reports are saved to GitHub automatically.")
+        
+        st.divider()
+        st.subheader("Load Past Report")
+        runs = fetch_github_runs()
+        
+        if runs:
+            sorted_ts = sorted(runs.keys(), reverse=True)
+            # Format timestamps cleanly for the UI
+            display_names = {
+                ts: datetime.strptime(ts, "%Y%m%d_%H%M%S").strftime("%b %d, %Y - %H:%M") 
+                for ts in sorted_ts
+            }
+            
+            selected_ts = st.selectbox("Select a date:", sorted_ts, format_func=lambda x: display_names[x])
+            
+            if st.button("View Report", type="primary"):
+                st.session_state.viewing_history = runs[selected_ts]
+                st.session_state.stage = "history"
+                st.rerun()
+        else:
+            st.info("No saved reports found in the repository yet.")
     else:
         st.warning(
             "Not configured. Add `GITHUB_TOKEN`, `GITHUB_REPO`, and (optionally) "
