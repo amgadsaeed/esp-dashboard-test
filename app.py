@@ -5,9 +5,8 @@ Team workflow:
   1. Upload the two ZIPs (All-wells snapshot + Single-wells time series).
   2. Review/adjust every detection threshold (all optional, defaults match
      the original notebook).
-  3. Review/edit the auto-detected Shutdown Events, Vibration, PIP, and
-     Motor Temp tables right in the browser (replaces the notebook's
-     input() prompts).
+  3. Review/edit the auto-detected Shutdown Events, Vibration, PIP, Motor Temp 
+     tables, and Lost Communication Wells right in the browser.
   4. Build outputs -> desktop PNG, mobile/WhatsApp PNG, Excel workbook,
      WhatsApp message text.
   5. Optionally push the generated report to a GitHub repo, so every run
@@ -45,13 +44,9 @@ st.title("ESP Field Dashboard")
 st.caption("Upload the field export ZIPs, review the auto-detected tables, then build the report.")
 
 # ------------------------------------------------------------------
-# Sidebar: logos + GitHub status
+# Sidebar: GitHub status
 # ------------------------------------------------------------------
 with st.sidebar:
-    st.header("Branding (optional)")
-    tam_logo_file = st.file_uploader("TAM logo (PNG)", type=["png"], key="tam_logo")
-    khalda_logo_file = st.file_uploader("Khalda logo (PNG)", type=["png"], key="khalda_logo")
-
     st.header("GitHub history")
     if github_configured():
         st.success("Connected \u2014 reports are saved to GitHub automatically.")
@@ -60,20 +55,6 @@ with st.sidebar:
             "Not configured. Add `GITHUB_TOKEN`, `GITHUB_REPO`, and (optionally) "
             "`GITHUB_BRANCH` in Streamlit secrets to enable history."
         )
-
-# Persist uploaded logos to disk so dashboard_lib (which reads them by path) can use them
-tmp_assets_dir = os.path.join(tempfile.gettempdir(), "esp_dashboard_assets")
-os.makedirs(tmp_assets_dir, exist_ok=True)
-if tam_logo_file is not None:
-    p = os.path.join(tmp_assets_dir, "tam_logo.png")
-    with open(p, "wb") as f:
-        f.write(tam_logo_file.getbuffer())
-    dl.TAM_LOGO_PATH = p
-if khalda_logo_file is not None:
-    p = os.path.join(tmp_assets_dir, "khalda_logo.png")
-    with open(p, "wb") as f:
-        f.write(khalda_logo_file.getbuffer())
-    dl.KHALDA_LOGO_PATH = p
 
 # ==================================================================
 # STEP 1 - UPLOAD + PROCESS
@@ -106,46 +87,55 @@ st.caption(
     "change any value below before processing if you want different sensitivity."
 )
 
-# (attr on dashboard_lib, label, min_value, step, is_a_time_window_in_minutes, help text)
-THRESHOLD_SPEC = [
-    ("VX_THRESHOLD_G", "High vibration alert threshold (G)", 0.0, 0.1, False,
-     "Any single Vx reading above this is flagged as a vibration alert."),
-    ("VX_GLITCH_CHECK_G", "Vibration glitch-check threshold (G)", 0.0, 0.1, False,
-     "Spikes at/above this need a shutdown nearby to count as real, not sensor noise."),
-    ("VX_GLITCH_WINDOW_BACK", "Glitch tolerance window \u2014 before spike (min)", 0.0, 1.0, True,
-     "How far back a shutdown can start and still explain a high-Vx spike."),
-    ("VX_GLITCH_WINDOW_FWD", "Glitch tolerance window \u2014 after spike (min)", 0.0, 5.0, True,
-     "How far forward a shutdown can start and still explain a high-Vx spike."),
-    ("VX_DOUBLE_RATIO", "Vibration doubling ratio", 1.0, 0.1, False,
-     "Flag a well if its settled Vx is at least this many times its baseline Vx."),
-    ("VX_DOUBLE_MIN_BASELINE_G", "Min. baseline Vx to check doubling (G)", 0.0, 0.01, False,
-     "Avoids flagging near-zero baseline noise as a 'doubling'."),
-    ("VX_DOUBLE_BASELINE_WINDOW", "Vibration baseline/7AM window (min)", 5.0, 5.0, True,
-     "Window used to compute the starting and 7 AM Vx levels for the doubling check."),
+ESSENTIAL_THRESHOLDS = [
     ("PIP_RISE_THRESHOLD_PSI", "Sustained PIP rise threshold (psi)", 0.0, 1.0, False,
-     "Minimum sustained PIP increase (baseline to 7 AM) to flag a rising-PIP trend."),
-    ("PIP_BASELINE_WINDOW", "PIP baseline/7AM window (min)", 5.0, 5.0, True,
-     "Window used to compute the starting and 7 AM PIP levels."),
+     "Minimum sustained PIP increase (from baseline to current level) to flag a rising-PIP trend indicating possible plugging or changes in intake. Default is 25 psi."),
     ("TEMP_RISE_THRESHOLD_F", "Sustained motor-temp rise threshold (\u00b0F)", 0.0, 0.5, False,
-     "Minimum sustained motor-temp increase (baseline to 7 AM) to flag a well."),
-    ("TEMP_BASELINE_WINDOW", "Motor-temp baseline/7AM window (min)", 5.0, 5.0, True,
-     "Window used to compute the starting (or post-restart) and 7 AM motor-temp levels."),
-    ("TEMP_DECLINE_TOLERANCE_F", "Motor-temp cooling tolerance (\u00b0F)", 0.0, 0.5, False,
-     "If the well has cooled by at least this much from its recent level, treat it as recovering, not a sustained rise."),
-    ("IMPLAUSIBLE_TEMP_F", "Implausible temperature floor (\u00b0F)", 0.0, 1.0, False,
-     "Temp readings below this are treated as a sensor/comm glitch, not a real reading."),
+     "Minimum sustained motor temperature increase to flag a well, which could indicate poor cooling or motor overload. Default is 3\u00b0F."),
+    ("VX_THRESHOLD_G", "High vibration alert threshold (G)", 0.0, 0.1, False,
+     "Absolute vibration alert threshold. Any verified spike above this value triggers an immediate high-vibration alert."),
 ]
 
+ADVANCED_THRESHOLDS = [
+    ("VX_GLITCH_CHECK_G", "Vibration glitch-check threshold (G)", 0.0, 0.1, False,
+     "Spikes at or above this value are cross-checked against shutdown history to eliminate false telemetry/sensor noise."),
+    ("VX_GLITCH_WINDOW_BACK", "Glitch tolerance window \u2014 before spike (min)", 0.0, 1.0, True,
+     "Time window before a high-vibration spike to check for a shutdown event that might explain the transient."),
+    ("VX_GLITCH_WINDOW_FWD", "Glitch tolerance window \u2014 after spike (min)", 0.0, 5.0, True,
+     "Time window after a high-vibration spike to verify if a shutdown event occurred, validating the transient."),
+    ("VX_DOUBLE_RATIO", "Vibration doubling ratio", 1.0, 0.1, False,
+     "Multiplier against the baseline vibration. Flags a well if its settled Vx reaches or exceeds this multiple of its baseline."),
+    ("VX_DOUBLE_MIN_BASELINE_G", "Min. baseline Vx to check doubling (G)", 0.0, 0.01, False,
+     "Floor for baseline vibration to avoid false doubling alarms caused by dividing by near-zero background noise."),
+    ("VX_DOUBLE_BASELINE_WINDOW", "Vibration baseline/7AM window (min)", 5.0, 5.0, True,
+     "Rolling timeframe used to establish the starting baseline and current settled Vx levels for the doubling check."),
+    ("PIP_BASELINE_WINDOW", "PIP baseline/7AM window (min)", 5.0, 5.0, True,
+     "Timeframe used to determine stable PIP averages, ignoring temporary dips or peaks."),
+    ("TEMP_BASELINE_WINDOW", "Motor-temp baseline/7AM window (min)", 5.0, 5.0, True,
+     "Timeframe to lock in the starting and current temperature levels. Also anchors to post-restart periods if a trip occurred."),
+    ("TEMP_DECLINE_TOLERANCE_F", "Motor-temp cooling tolerance (\u00b0F)", 0.0, 0.5, False,
+     "Degrees of cooling accepted before a well is no longer considered to have an actively 'sustained' rise (e.g. recovering from a restart)."),
+    ("IMPLAUSIBLE_TEMP_F", "Implausible temperature floor (\u00b0F)", 0.0, 1.0, False,
+     "Readings below this physically impossible downhole temperature cause the entire row to be dropped as a telemetry glitch."),
+]
 
 def _default_for(attr_name):
     val = getattr(dl, attr_name)
     return val.total_seconds() / 60.0 if isinstance(val, pd.Timedelta) else float(val)
 
-
 threshold_values = {}
-with st.expander("Adjust thresholds", expanded=True):
+with st.expander("Essential Limits (PIP, Temp, High Vib)", expanded=True):
     t_cols = st.columns(2)
-    for i, (attr, label, min_val, step, is_minutes, help_text) in enumerate(THRESHOLD_SPEC):
+    for i, (attr, label, min_val, step, is_minutes, help_text) in enumerate(ESSENTIAL_THRESHOLDS):
+        with t_cols[i % 2]:
+            threshold_values[attr] = st.number_input(
+                label, min_value=min_val, value=_default_for(attr), step=step,
+                help=help_text, key=f"threshold_{attr}",
+            )
+
+with st.expander("Advanced Limits & Tolerances", expanded=False):
+    t_cols = st.columns(2)
+    for i, (attr, label, min_val, step, is_minutes, help_text) in enumerate(ADVANCED_THRESHOLDS):
         with t_cols[i % 2]:
             threshold_values[attr] = st.number_input(
                 label, min_value=min_val, value=_default_for(attr), step=step,
@@ -155,10 +145,8 @@ with st.expander("Adjust thresholds", expanded=True):
 process_clicked = st.button("Process data", type="primary", disabled=not (all_wells_zip or single_wells_zip))
 
 if process_clicked:
-    # Apply the (possibly edited) thresholds to dashboard_lib before running
-    # any detection - every detector reads these as plain module globals,
-    # so setting them here affects this run's process_folder()/build_summary().
-    for attr, label, min_val, step, is_minutes, help_text in THRESHOLD_SPEC:
+    # Apply thresholds
+    for attr, label, min_val, step, is_minutes, help_text in ESSENTIAL_THRESHOLDS + ADVANCED_THRESHOLDS:
         val = threshold_values[attr]
         setattr(dl, attr, pd.Timedelta(minutes=val) if is_minutes else val)
 
@@ -224,7 +212,27 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
     )
     summary = st.session_state.summary
 
-    # ---- Shutdown events (editable: add/edit/delete rows) ----
+    # ---- Lost Communication Wells ----
+    st.subheader("Lost Communication Wells (> 3 hours)")
+    st.caption("Wells missing telemetry for over 3 hours. Auto-detected wells are listed below; you can manually edit or add more.")
+    
+    mc_wells = summary.get('miscommunication_wells', [])
+    mc_df = pd.DataFrame([{"Well": w, "Notes": "Auto-detected"} for w in mc_wells])
+    if mc_df.empty:
+        mc_df = pd.DataFrame(columns=["Well", "Notes"])
+        
+    edited_mc = st.data_editor(
+        mc_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="mc_editor",
+        column_config={
+            "Well": st.column_config.TextColumn("Well Name", required=True),
+            "Notes": st.column_config.TextColumn("Notes / Status")
+        },
+    )
+
+    # ---- Shutdown events ----
     st.subheader("Shutdown Events")
     shutdown_cols = ["Well", "Shutdown Start", "Shutdown End", "Downtime (hrs)", "Reason", "Ongoing"]
     shutdown_df = summary["shutdown_df"].copy()
@@ -250,17 +258,13 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             "Ongoing": st.column_config.CheckboxColumn(),
         },
     )
-    # Always recompute Downtime from Start/End, overriding any stale or
-    # manually-typed value - this runs on every rerun (i.e. every edit),
-    # so the disabled column above reflects the latest Start/End on the
-    # very next interaction.
     _start_ts = pd.to_datetime(edited_shutdown["Shutdown Start"], errors="coerce")
     _end_ts = pd.to_datetime(edited_shutdown["Shutdown End"], errors="coerce")
     edited_shutdown["Downtime (hrs)"] = (
         (_end_ts - _start_ts).dt.total_seconds() / 3600.0
     ).round(2)
 
-    # ---- High vibration alerts (editable: delete rows only, matches notebook) ----
+    # ---- High vibration alerts ----
     st.subheader(f"High Vibration Alerts (Vx > {dl.VX_THRESHOLD_G}G)")
     vx_df = summary["vx_df"].copy().reset_index(drop=True)
     if vx_df.empty:
@@ -273,7 +277,7 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         )
         edited_vx = edited_vx_raw[edited_vx_raw["Keep"]].drop(columns=["Keep"]).reset_index(drop=True)
 
-    # ---- Rising PIP trends (editable: delete rows only) ----
+    # ---- Rising PIP trends ----
     st.subheader(f"Rising PIP Trends (> {dl.PIP_RISE_THRESHOLD_PSI} psi)")
     pip_df = summary["pip_df"].copy().reset_index(drop=True)
     if pip_df.empty:
@@ -286,7 +290,7 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         )
         edited_pip = edited_pip_raw[edited_pip_raw["Keep"]].drop(columns=["Keep"]).reset_index(drop=True)
 
-    # ---- Sustained motor temp increase (editable: delete rows only) ----
+    # ---- Sustained motor temp increase ----
     st.subheader(f"Sustained Motor Temp Increase (> {dl.TEMP_RISE_THRESHOLD_F}\u00b0F, still up at 7AM)")
     temp_df = summary["temp_df"].copy().reset_index(drop=True)
     if temp_df.empty:
@@ -303,14 +307,33 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
     build_clicked = st.button("Build outputs", type="primary")
 
     if build_clicked:
-        # Recompute derived tables to match whatever edits were just made,
-        # same logic as the notebook's review_shutdown_table().
+        # Recompute miscommunication table
+        new_mc_wells = edited_mc["Well"].dropna().astype(str).tolist()
+        summary["miscommunication_wells"] = new_mc_wells
+        summary["miscommunication"] = len(new_mc_wells)
+        summary['total'] = summary['files_found'] + summary['miscommunication']
+
+        # Update well status rows
+        ws_df = summary["well_status_df"].copy()
+        ws_df = ws_df[ws_df['Status'] != 'Miscommunication']
+        new_rows = []
+        for _, row in edited_mc.iterrows():
+            w = row['Well']
+            if not w or str(w).strip() == "": continue
+            notes = row['Notes'] if pd.notna(row['Notes']) and str(row['Notes']).strip() != "" else 'Manually added / No data'
+            new_rows.append({
+                'Well': w, 'Status': 'Miscommunication',
+                'Last Freq (Hz)': None, 'Last Vx (G)': None,
+                'Rows Logged': 0, 'Error': notes
+            })
+        if new_rows:
+            summary["well_status_df"] = pd.concat([ws_df, pd.DataFrame(new_rows)], ignore_index=True)
+        else:
+            summary["well_status_df"] = ws_df
+
+        # Recompute derived tables 
         df = edited_shutdown.copy()
         if not df.empty:
-            # Downtime is already auto-calculated from Start/End above; a
-            # missing End (still ongoing / unknown) leaves it as NaN rather
-            # than a manually-typed guess - treat that as 0.0 for sorting
-            # and the chart/export, same fallback the notebook used.
             df["Downtime (hrs)"] = pd.to_numeric(df["Downtime (hrs)"], errors="coerce").fillna(0.0)
             df = df.sort_values("Downtime (hrs)", ascending=False).reset_index(drop=True)
             shutdown_count_df = (
