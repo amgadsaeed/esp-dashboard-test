@@ -206,7 +206,7 @@ if process_clicked:
             st.session_state.stage = "review"
             st.success(
                 f"Processed {summary['files_found']} well file(s) | Total wells: {summary['total']} | "
-                f"Miscommunication: {summary['miscommunication']} | "
+                f"Lost Communication: {summary['miscommunication']} | "
                 f"Shutdown events: {len(summary['shutdown_df'])} | "
                 f"Vx > {dl.VX_THRESHOLD_G}G wells: {len(summary['vx_df'])} | "
                 f"Rising PIP wells: {len(summary['pip_df'])} | "
@@ -216,10 +216,10 @@ if process_clicked:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
 # ==================================================================
-# STEP 3 - REVIEW / EDIT TABLES
+# STEP 3 - REVIEW / EDIT TABLES & LAYOUT
 # ==================================================================
 if st.session_state.stage in ("review", "done") and st.session_state.summary is not None:
-    st.header("3. Review / edit tables")
+    st.header("3. Review tables & design layout")
     st.caption(
         "Add, edit, or delete rows below \u2014 mirrors the notebook's REVIEW / EDIT TABLES step. "
         "Nothing is finalized until you click 'Build outputs' below."
@@ -323,6 +323,21 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         )
         edited_temp = edited_temp_raw[edited_temp_raw["Keep"]].drop(columns=["Keep"]).reset_index(drop=True)
 
+    # ---- Layout settings ----
+    st.divider()
+    st.subheader("Layout & Design Settings")
+    with st.expander("Adjust spacing and offsets", expanded=False):
+        lc1, lc2 = st.columns(2)
+        with lc1:
+            st.markdown("**Desktop Layout**")
+            desktop_hspace = st.slider("Section Vertical Spacing (Desktop)", 0.2, 0.8, 0.45, 0.05)
+            desktop_wspace = st.slider("Section Horizontal Spacing (Desktop)", 0.1, 0.5, 0.25, 0.05)
+            desktop_bar_offset = st.slider("Bar Chart Left Offset (Desktop)", -0.5, 0.0, -0.28, 0.01)
+        with lc2:
+            st.markdown("**Mobile Layout**")
+            mobile_hspace = st.slider("Section Vertical Spacing (Mobile)", 0.2, 1.0, 0.50, 0.05)
+            mobile_bar_offset = st.slider("Bar Chart Left Offset (Mobile)", -0.6, 0.0, -0.42, 0.01)
+
     st.divider()
     build_clicked = st.button("Build outputs", type="primary")
 
@@ -372,6 +387,16 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         summary["vx_df"] = edited_vx.sort_values("Max Vx (G)", ascending=False).reset_index(drop=True) if not edited_vx.empty else edited_vx
         summary["pip_df"] = edited_pip.sort_values("Net Rise (psi)", ascending=False).reset_index(drop=True) if not edited_pip.empty else edited_pip
         summary["temp_df"] = edited_temp.sort_values("Rise (F)", ascending=False).reset_index(drop=True) if not edited_temp.empty else edited_temp
+        
+        # Inject design settings directly into the summary payload
+        summary['design_settings'] = {
+            'desktop_hspace': desktop_hspace,
+            'desktop_wspace': desktop_wspace,
+            'desktop_bar_offset': desktop_bar_offset,
+            'mobile_hspace': mobile_hspace,
+            'mobile_bar_offset': mobile_bar_offset
+        }
+        
         st.session_state.summary = summary
         st.session_state.stage = "done"
 
