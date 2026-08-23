@@ -711,8 +711,8 @@ def build_summary(results, total_wells_expected=None, miscommunication_wells=Non
     }
 
 
-def draw_kpi_cards(fig, gs, summary, report_date):
-    ax = fig.add_subplot(gs[0, :])
+def draw_kpi_cards(fig, gs_cell, summary):
+    ax = fig.add_subplot(gs_cell)
     ax.axis('off')
 
     kpi_values = [
@@ -1077,7 +1077,7 @@ def build_dashboard_figure(summary, report_date, output_png):
 
     draw_logos(fig)
 
-    draw_kpi_cards(fig, gs[0, :], summary, report_date)
+    draw_kpi_cards(fig, gs[0, :], summary)
 
     draw_table(
         fig, gs[1, :], summary['shutdown_df'],
