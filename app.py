@@ -145,6 +145,7 @@ with st.expander("Advanced Limits & Tolerances", expanded=False):
 process_clicked = st.button("Process data", type="primary", disabled=not (all_wells_zip or single_wells_zip))
 
 if process_clicked:
+    # Apply thresholds
     for attr, label, min_val, step, is_minutes, help_text in ESSENTIAL_THRESHOLDS + ADVANCED_THRESHOLDS:
         val = threshold_values[attr]
         setattr(dl, attr, pd.Timedelta(minutes=val) if is_minutes else val)
@@ -266,6 +267,13 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
     # ---- High vibration alerts ----
     st.subheader(f"High Vibration Alerts (Vx > {dl.VX_THRESHOLD_G}G)")
     vx_df = summary["vx_df"].copy().reset_index(drop=True)
+    
+    # Detach timeseries data temporarily to prevent Streamlit rendering crash
+    vx_ts_col = None
+    if not vx_df.empty and 'timeseries' in vx_df.columns:
+        vx_ts_col = vx_df[['Well', 'timeseries']]
+        vx_df = vx_df.drop(columns=['timeseries'])
+        
     if vx_df.empty:
         st.caption("No wells exceeded the vibration threshold.")
         edited_vx = vx_df
@@ -275,7 +283,7 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             vx_df, use_container_width=True, key="vx_editor", disabled=[c for c in vx_df.columns if c != "Keep"]
         )
         edited_vx = edited_vx_raw[edited_vx_raw["Keep"]].drop(columns=["Keep"]).reset_index(drop=True)
-
+        
     # ---- Rising PIP trends ----
     st.subheader(f"Rising PIP Trends (> {dl.PIP_RISE_THRESHOLD_PSI} psi)")
     pip_df = summary["pip_df"].copy().reset_index(drop=True)
@@ -306,11 +314,13 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
     build_clicked = st.button("Build outputs", type="primary")
 
     if build_clicked:
+        # Recompute miscommunication table
         new_mc_wells = edited_mc["Well"].dropna().astype(str).tolist()
         summary["miscommunication_wells"] = new_mc_wells
         summary["miscommunication"] = len(new_mc_wells)
         summary['total'] = summary['files_found'] + summary['miscommunication']
 
+        # Update well status rows
         ws_df = summary["well_status_df"].copy()
         ws_df = ws_df[ws_df['Status'] != 'Miscommunication']
         new_rows = []
@@ -328,6 +338,7 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         else:
             summary["well_status_df"] = ws_df
 
+        # Recompute derived tables 
         df = edited_shutdown.copy()
         if not df.empty:
             df["Downtime (hrs)"] = pd.to_numeric(df["Downtime (hrs)"], errors="coerce").fillna(0.0)
@@ -344,6 +355,11 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         summary["shutdown_df"] = df
         summary["shutdown_count_df"] = shutdown_count_df
         summary["reason_counts"] = reason_counts
+        
+        # Re-attach timeseries back to vx_df if they kept it
+        if not edited_vx.empty and vx_ts_col is not None:
+            edited_vx = edited_vx.merge(vx_ts_col, on='Well', how='left')
+            
         summary["vx_df"] = edited_vx.sort_values("Max Vx (G)", ascending=False).reset_index(drop=True) if not edited_vx.empty else edited_vx
         summary["pip_df"] = edited_pip.sort_values("Net Rise (psi)", ascending=False).reset_index(drop=True) if not edited_pip.empty else edited_pip
         summary["temp_df"] = edited_temp.sort_values("Rise (F)", ascending=False).reset_index(drop=True) if not edited_temp.empty else edited_temp
