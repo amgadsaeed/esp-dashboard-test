@@ -335,24 +335,36 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             desktop_temp_margin = st.slider("Motor Temp Bar Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
             desktop_vx_margin = st.slider("Vibration Chart Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
             desktop_pie_offset = st.slider("Pie Chart X Offset (Desktop)", -0.5, 0.5, 0.0, 0.01)
-            
+            desktop_temp_legend_pad = st.slider("Motor Temp Legend Headroom (Desktop)", 0.3, 2.0, 0.9, 0.1,
+                                                 help="Blank space reserved above the bars for the legend. Lower = bars start closer to the top.")
+            st.markdown("**Desktop Logo**")
+            tam_scale_desktop = st.slider("TAM Logo Size (Desktop)", 0.5, 2.0, 1.0, 0.05)
+            khalda_scale_desktop = st.slider("Khalda Logo Size (Desktop)", 0.5, 2.0, 1.0, 0.05)
+
         with lc2:
             st.markdown("**Mobile Bars & Elements**")
-            mobile_hspace = st.slider("Section Vertical Spacing (Mobile)", 0.2, 1.0, 0.50, 0.05)
+            mobile_top_gap_in = st.slider("Gap Above First Section (Mobile, in)", 0.0, 0.6, 0.20, 0.01,
+                                           help="Space between the subtitle and the KPI cards.")
+            mobile_row_gap_in = st.slider("Gap Between Sections (Mobile, in)", 0.6, 1.4, 0.90, 0.01,
+                                           help="Same fixed gap applied between every section - including right after the Lost Communication note - so it's predictable everywhere. A section title needs ~0.5in of headroom and a bar chart's axis label needs ~0.3in below it, so going much below ~0.85in will start crowding titles/labels.")
             mobile_sd_margin = st.slider("Shutdown Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
             mobile_temp_margin = st.slider("Motor Temp Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
             mobile_vx_margin = st.slider("Vibration Chart Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
             mobile_pie_offset = st.slider("Pie Chart X Offset (Mobile)", -0.5, 0.5, 0.0, 0.01)
-            
+            mobile_temp_legend_pad = st.slider("Motor Temp Legend Headroom (Mobile)", 0.3, 2.0, 0.9, 0.1,
+                                                help="Blank space reserved above the bars for the legend. Lower = bars start closer to the top.")
+            st.markdown("**Mobile Logo**")
+            tam_scale_mobile = st.slider("TAM Logo Size (Mobile)", 0.5, 2.0, 1.0, 0.05)
+            khalda_scale_mobile = st.slider("Khalda Logo Size (Mobile)", 0.5, 2.0, 1.0, 0.05)
+
         with lc3:
-            st.markdown("**Spacing & Logos**")
-            tam_scale = st.slider("TAM Logo Size (Scale)", 0.5, 2.0, 1.0, 0.05)
-            khalda_scale = st.slider("Khalda Logo Size (Scale)", 0.5, 2.0, 1.0, 0.05)
+            st.markdown("**KPI Cards & Footer (shared)**")
             kpi_top_pad = st.slider("Space ABOVE Cards", -0.1, 0.3, 0.0, 0.01)
             kpi_space = st.slider("Space BEFORE Lost Comm Note", 0.0, 0.3, 0.02, 0.01)
             kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.3, 0.02, 0.01)
-            div_pad = st.slider("Green Divider Padding", 0.0, 0.2, 0.1, 0.01)
-            footer_y = st.slider("Footer Line Y Position", 0.0, 0.1, 0.035, 0.005)
+            div_pad = st.slider("Green Divider Padding (Desktop)", 0.0, 0.2, 0.1, 0.01,
+                                 help="Mobile's divider is centered automatically in its section gap - use the mobile gap sliders instead.")
+            footer_y = st.slider("Footer Line Y Position (Desktop)", 0.0, 0.1, 0.035, 0.005)
 
     st.divider()
     build_clicked = st.button("Build outputs", type="primary")
@@ -412,13 +424,18 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             'desktop_temp_margin': desktop_temp_margin,
             'desktop_vx_margin': desktop_vx_margin,
             'desktop_pie_offset': desktop_pie_offset,
-            'mobile_hspace': mobile_hspace,
+            'desktop_temp_legend_pad': desktop_temp_legend_pad,
+            'mobile_top_gap_in': mobile_top_gap_in,
+            'mobile_row_gap_in': mobile_row_gap_in,
             'mobile_sd_margin': mobile_sd_margin,
             'mobile_temp_margin': mobile_temp_margin,
             'mobile_vx_margin': mobile_vx_margin,
             'mobile_pie_offset': mobile_pie_offset,
-            'tam_scale': tam_scale,
-            'khalda_scale': khalda_scale,
+            'mobile_temp_legend_pad': mobile_temp_legend_pad,
+            'tam_scale_desktop': tam_scale_desktop,
+            'khalda_scale_desktop': khalda_scale_desktop,
+            'tam_scale_mobile': tam_scale_mobile,
+            'khalda_scale_mobile': khalda_scale_mobile,
             'kpi_top_pad': kpi_top_pad,
             'kpi_space': kpi_space,
             'kpi_bottom_space': kpi_bottom_space,

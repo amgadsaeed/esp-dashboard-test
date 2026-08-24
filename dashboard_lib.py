@@ -927,13 +927,21 @@ def draw_motor_temp_bar(fig, gs_cell, temp_df, summary, is_mobile=False):
         ax.text(b + r + max(baseline + rise) * 0.015, i, f'+{r:.1f}\u00b0F', va='center',
                 fontweight='bold', fontsize=14 if is_mobile else 11.5, color=RED)
 
-    # Expanded upper y-limit gives the inner legend a dedicated, overlapping-free zone
-    ax.set_ylim(-0.5, len(wells) - 0.5 + 2.0)
+    # Headroom reserved above the bars for the inner legend. This used to be a
+    # fixed "+2.0" regardless of how many wells were plotted, which is what made
+    # the gap between the legend and the first bar balloon whenever only a
+    # couple of wells were shown - and why the general vertical-spacing slider
+    # couldn't shrink it (that slider only controls the gap *between* sections,
+    # not this internal headroom). It's now a tunable, smaller default, and it
+    # also feeds compute_row_height_ratios(_mobile) so the section's height
+    # actually shrinks to match.
+    legend_pad = settings.get('mobile_temp_legend_pad', 0.9) if is_mobile else settings.get('desktop_temp_legend_pad', 0.9)
+    ax.set_ylim(-0.5, len(wells) - 0.5 + legend_pad)
     ax.set_xlim(0, (baseline + rise).max() * 1.15)
     ax.set_xlabel('Motor Temperature (\u00b0F)', fontsize=14 if is_mobile else 12, color=SLATE)
     
     # Legend safely locked inside the top right corner
-    ax.legend(loc='upper right', bbox_to_anchor=(0.99, 0.98), ncol=2, frameon=False, labelcolor=SLATE)
+    ax.legend(loc='upper right', bbox_to_anchor=(0.99, 1.0), ncol=2, frameon=False, labelcolor=SLATE)
 
 
 def draw_reason_pie(fig, gs_cell, reason_counts, summary, max_slices=8, is_mobile=False):
@@ -1021,8 +1029,18 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
     palette = sns.color_palette("Set1", n_wells)
     report_start = summary.get('report_start')
     report_end = summary.get('report_end')
+    chart_axes = []
 
     for i, row in vx_df.iterrows():
+        # Well name gets its own dedicated column (the same margin column the bar
+        # charts use) so it can never collide with this chart's own Y-axis
+        # (vibration G) tick numbers - unlike the bar charts, this chart needs to
+        # keep its real numeric axis, so the label can't just sit in the same axes.
+        ax_label = fig.add_subplot(gs_inner[i + 1, 0])
+        ax_label.axis('off')
+        ax_label.text(0.98, 0.5, row['Well'], ha='right', va='center', transform=ax_label.transAxes,
+                      fontsize=13 if is_mobile else 11, color=NAVY, fontweight='bold')
+
         ax = fig.add_subplot(gs_inner[i + 1, 1])
         ax.set_facecolor(BG_PANEL)
         for spine in ['top', 'right']:
@@ -1035,15 +1053,11 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
         ax.grid(axis='x', color=GRID, linewidth=0.8, zorder=0, alpha=0.5)
 
         ts = row['timeseries']
-        well = row['Well']
         max_y = max(thresh, ts[COL_VX].max())
         
         ax.plot(ts[COL_TIMESTAMP], ts[COL_VX], color=palette[i], linewidth=2.0 if is_mobile else 1.5)
         ax.axhline(thresh, color=RED, linestyle='--', linewidth=1.8 if is_mobile else 1.5, alpha=0.8)
 
-        # Well names horizontally written matching the Bar Charts' left alignment logic
-        ax.text(-0.01, 0.5, well, ha='right', va='center', transform=ax.transAxes, fontsize=13 if is_mobile else 11, color=NAVY, fontweight='bold')
-        
         ax.set_ylim(0, max_y * 1.15)
         if report_start and report_end:
             ax.set_xlim([report_start, report_end])
@@ -1051,16 +1065,17 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
         if i < n_wells - 1:
             ax.tick_params(labelbottom=False)
-            
-    first_ax = fig.axes[-n_wells]
+        chart_axes.append(ax)
+
+    first_ax = chart_axes[0]
     first_ax.plot([], [], color=RED, linestyle='--', label=f'Threshold ({thresh}G)')
     first_ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.45 if is_mobile else 1.35), ncol=1, frameon=False, labelcolor=SLATE)
 
 
 def draw_logos(fig, summary):
     settings = summary.get('design_settings', {})
-    tam_scale = settings.get('tam_scale', 1.0)
-    khalda_scale = settings.get('khalda_scale', 1.0)
+    tam_scale = settings.get('tam_scale_desktop', 1.0)
+    khalda_scale = settings.get('khalda_scale_desktop', 1.0)
 
     if TAM_LOGO_PATH and os.path.isfile(TAM_LOGO_PATH):
         try:
@@ -1110,7 +1125,8 @@ def compute_row_height_ratios(summary):
     ratio_bar_pie = min(1.00, max(0.55, 0.50 + 0.0333 * n_bar))
     ratio_vx = max(0.40, 0.15 + n_vx * 0.20)
     ratio_pip = min(1.05, max(0.40, 0.30 + 0.0625 * n_pip))
-    ratio_temp = min(1.00, max(0.35, 0.30 + 0.0333 * n_temp))
+    temp_legend_pad = settings.get('desktop_temp_legend_pad', 0.9)
+    ratio_temp = min(1.00, max(0.28, 0.16 + 0.0333 * (n_temp + temp_legend_pad)))
     return [ratio_kpi, ratio_shutdown, ratio_bar_pie, ratio_vx, ratio_pip, ratio_temp]
 
 
@@ -1331,12 +1347,26 @@ def build_whatsapp_message(summary, report_date):
 # ============================================================
 # MOBILE (WHATSAPP) DASHBOARD BUILDING FUNCTIONS
 # ============================================================
+# Vertical space on the mobile layout is controlled with two absolute,
+# inch-based knobs instead of one relative "hspace" fraction:
+#   - mobile_top_gap_in : gap between the subtitle and the first section
+#                          (the KPI cards) - this is what used to be an
+#                          unreachable, fixed fraction of the whole figure,
+#                          which is exactly why it looked huge on tall
+#                          dashboards and couldn't be dialed down.
+#   - mobile_row_gap_in : gap between every pair of sections below that
+#                          (including the gap right after the Lost
+#                          Communication note). Because it's a fixed inch
+#                          value rather than a fraction of each row's own
+#                          (very different) height, every gap in the
+#                          dashboard now ends up the same size and moving
+#                          one slider moves all of them predictably.
 MOBILE_FIG_WIDTH_IN = 10.5
 MOBILE_LEFT, MOBILE_RIGHT = 0.09, 0.91
 MOBILE_INCHES_PER_RATIO_UNIT = 6.126
-MOBILE_TOP = 0.92
-MOBILE_BOTTOM = 0.065
 MOBILE_MIN_HEIGHT_IN = 14.0
+MOBILE_HEADER_IN = 0.62   # fixed block reserved for title + subtitle
+MOBILE_FOOTER_IN = 0.34   # fixed block reserved for footer rule + generated-by text
 
 
 def _shorten_dt(val):
@@ -1446,34 +1476,95 @@ def compute_row_height_ratios_mobile(summary):
     ratio_pie = min(1.05, max(0.52, 0.30 + 0.068 * n_pie))
     ratio_vx = max(0.40, 0.15 + n_vx * 0.22)
     ratio_pip = min(1.05, max(0.32, 0.19 + 0.068 * n_pip))
-    ratio_temp = min(1.20, max(0.45, 0.28 + 0.055 * n_temp))
+    temp_legend_pad = settings.get('mobile_temp_legend_pad', 0.9)
+    ratio_temp = min(1.20, max(0.34, 0.16 + 0.055 * (n_temp + temp_legend_pad)))
     
     return [ratio_kpi, ratio_shutdown, ratio_bar, ratio_pie, ratio_vx, ratio_pip, ratio_temp]
 
 
+def _mobile_gap_rows(n_content):
+    """Content rows sit at even gridspec indices (0, 2, 4, ...); a thin spacer
+    row sits at each odd index between them. Returns (content_idx, gap_idx)."""
+    content_idx = [2 * i for i in range(n_content)]
+    gap_idx = [2 * i + 1 for i in range(n_content - 1)]
+    return content_idx, gap_idx
+
+
+def draw_section_dividers_mobile(fig, gs, gap_idx, fig_height):
+    """Draws the dotted green divider centered inside each spacer row. Some
+    sections draw a title above their own row and/or an x-axis label below
+    it (neither is accounted for by the gridspec cell itself), so the gap
+    needs enough room on both sides - see the row_gap_in default/comment."""
+    bottoms, tops, lefts, rights = gs.get_grid_positions(fig)
+    x0, x1 = lefts[0], rights[-1]
+    for gi in gap_idx:
+        y_mid = (bottoms[gi] + tops[gi]) / 2.0
+        fig.add_artist(Line2D([x0, x1], [y_mid, y_mid], transform=fig.transFigure,
+                               color=LIGHT_GREEN, linewidth=1.5, alpha=0.8,
+                               linestyle=':', zorder=6))
+
+
 def build_mobile_dashboard_figure(summary, report_date, output_png):
     settings = summary.get('design_settings', {})
-    vspace = settings.get('mobile_hspace', 0.50)
-    footer_y = settings.get('footer_y', 0.04)
-    
-    height_ratios = compute_row_height_ratios_mobile(summary)
-    gridspec_in = sum(height_ratios) * MOBILE_INCHES_PER_RATIO_UNIT
-    fig_height = max(MOBILE_MIN_HEIGHT_IN, gridspec_in / (MOBILE_TOP - MOBILE_BOTTOM))
+    # Two absolute, inch-based spacing knobs (see the comment above the MOBILE_*
+    # constants) replace the old single relative "hspace" fraction.
+    top_gap_in = settings.get('mobile_top_gap_in', 0.20)
+    # Every section title below the first is ~19pt bold text on a 14pt pad
+    # (~0.5in of clearance needed above the next chart/table), and the bar
+    # charts additionally draw an x-axis label below themselves (~0.3in).
+    # Neither is accounted for by the gridspec cell itself, so the default
+    # gap below covers the worst case (a bar chart's x-label followed by the
+    # next section's title) with a bit of breathing room to spare.
+    row_gap_in = settings.get('mobile_row_gap_in', 0.90)
+
+    content_ratios = compute_row_height_ratios_mobile(summary)
+    n_content = len(content_ratios)
+    content_in = sum(content_ratios) * MOBILE_INCHES_PER_RATIO_UNIT
+    gaps_in = top_gap_in + row_gap_in * (n_content - 1)
+
+    # If the content is short enough that MOBILE_MIN_HEIGHT_IN would otherwise
+    # kick in, put the slack into the header/footer margins rather than
+    # silently stretching the gaps between sections (which would make the
+    # row-gap slider lie about what it's actually doing).
+    base_total_in = MOBILE_HEADER_IN + gaps_in + content_in + MOBILE_FOOTER_IN
+    extra_in = max(0.0, MOBILE_MIN_HEIGHT_IN - base_total_in)
+    header_in = MOBILE_HEADER_IN + extra_in * 0.5
+    footer_in = MOBILE_FOOTER_IN + extra_in * 0.5
+    fig_height = header_in + gaps_in + content_in + footer_in
 
     fig = plt.figure(figsize=(MOBILE_FIG_WIDTH_IN, fig_height), facecolor='white')
-    gs = fig.add_gridspec(7, 1, height_ratios=height_ratios, hspace=vspace,
-                           left=MOBILE_LEFT, right=MOBILE_RIGHT, top=MOBILE_TOP, bottom=MOBILE_BOTTOM)
 
-    draw_section_dividers(fig, gs, summary)
+    # Interleave a spacer row (sized in the same ratio units) between every
+    # pair of content rows, plus one above the first row for the top gap.
+    top_gap_ratio = top_gap_in / MOBILE_INCHES_PER_RATIO_UNIT
+    row_gap_ratio = row_gap_in / MOBILE_INCHES_PER_RATIO_UNIT
+    combined_ratios = [top_gap_ratio]
+    for i, r in enumerate(content_ratios):
+        combined_ratios.append(r)
+        if i < n_content - 1:
+            combined_ratios.append(row_gap_ratio)
 
-    fig.text(0.5, 0.975, 'Daily ESP Surveillance Summary', fontsize=25, fontweight='bold',
+    top_frac = 1.0 - header_in / fig_height
+    bottom_frac = footer_in / fig_height
+
+    gs = fig.add_gridspec(len(combined_ratios), 1, height_ratios=combined_ratios, hspace=0.0,
+                           left=MOBILE_LEFT, right=MOBILE_RIGHT, top=top_frac, bottom=bottom_frac)
+
+    # content rows now live at gs[1], gs[3], gs[5], ... (index 0 is the top gap)
+    content_idx = [1 + 2 * i for i in range(n_content)]
+    gap_idx = [2 + 2 * i for i in range(n_content - 1)]
+    draw_section_dividers_mobile(fig, gs, gap_idx, fig_height)
+
+    title_y = 1.0 - (0.20 / fig_height)
+    subtitle_y = 1.0 - (0.42 / fig_height)
+    fig.text(0.5, title_y, 'Daily ESP Surveillance Summary', fontsize=25, fontweight='bold',
               color=DARK_GREEN, ha='center')
-    fig.text(0.5, 0.957, f'{summary["total"]} Wells  \u2022  {report_date}',
+    fig.text(0.5, subtitle_y, f'{summary["total"]} Wells  \u2022  {report_date}',
               fontsize=13.5, color=GREEN, ha='center')
 
-    draw_logos_mobile(fig, fig_height, summary)
+    draw_logos_mobile(fig, fig_height, header_in, summary)
 
-    draw_kpi_cards_mobile(fig, gs[0], summary)
+    draw_kpi_cards_mobile(fig, gs[content_idx[0]], summary)
 
     shutdown_df_mobile = summary['shutdown_df'].copy()
     if not shutdown_df_mobile.empty:
@@ -1484,34 +1575,35 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
         })
 
     draw_table(
-        fig, gs[1], shutdown_df_mobile,
+        fig, gs[content_idx[1]], shutdown_df_mobile,
         columns=['Well', 'Reason', 'Start', 'End', 'Hrs'],
         title='Shutdown Events & Downtime',
         accent=LIGHT_GREEN, empty_msg='No shutdown events logged for this period.',
         max_rows=20, col_widths=[0.13, 0.39, 0.17, 0.17, 0.14], is_mobile=True
     )
 
-    draw_shutdown_count_bar(fig, gs[2], summary['shutdown_count_df'], summary, is_mobile=True)
-    draw_reason_pie(fig, gs[3], summary['reason_counts'], summary, is_mobile=True)
+    draw_shutdown_count_bar(fig, gs[content_idx[2]], summary['shutdown_count_df'], summary, is_mobile=True)
+    draw_reason_pie(fig, gs[content_idx[3]], summary['reason_counts'], summary, is_mobile=True)
 
-    draw_vx_line_chart(fig, gs[4], summary['vx_df'], summary, is_mobile=True)
+    draw_vx_line_chart(fig, gs[content_idx[4]], summary['vx_df'], summary, is_mobile=True)
 
     pip_df = summary['pip_df']
     pip_cols = ['Well', 'PIP-Yesterday 7AM (psi)', 'PIP-Today 7AM (psi)', 'Net Rise (psi)'] if not pip_df.empty else []
     pip_thresh = summary.get('pip_threshold', PIP_RISE_THRESHOLD_PSI)
     
     draw_table(
-        fig, gs[5], pip_df,
+        fig, gs[content_idx[5]], pip_df,
         columns=pip_cols,
         title=f'Rising PIP Trends (> {pip_thresh} psi)',
         accent=LIGHT_GREEN, empty_msg=f'No wells showed a sustained PIP rise greater than {pip_thresh} psi.',
         max_rows=12, col_widths=[0.24, 0.28, 0.28, 0.20], is_mobile=True
     )
 
-    draw_motor_temp_bar(fig, gs[6], summary['temp_df'], summary, is_mobile=True)
+    draw_motor_temp_bar(fig, gs[content_idx[6]], summary['temp_df'], summary, is_mobile=True)
 
-    fig.add_artist(Line2D([MOBILE_LEFT, MOBILE_RIGHT], [footer_y], transform=fig.transFigure, color=GRID, linewidth=2.0))
-    fig.text(0.5, footer_y - 0.02, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
+    footer_line_y = bottom_frac * 0.55
+    fig.add_artist(Line2D([MOBILE_LEFT, MOBILE_RIGHT], [footer_line_y], transform=fig.transFigure, color=GRID, linewidth=2.0))
+    fig.text(0.5, footer_line_y - (0.16 / fig_height), f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
              fontsize=13.5, color=SLATE, ha='center', fontweight='bold')
 
     plt.savefig(output_png, dpi=200, facecolor='white', bbox_inches='tight')
@@ -1522,7 +1614,7 @@ MOBILE_LOGO_HEIGHT_IN = 0.50
 MOBILE_LOGO_MAX_WIDTH_IN = 1.30
 
 
-def _place_logo_mobile(fig, path, fig_height, side, scale):
+def _place_logo_mobile(fig, path, fig_height, header_in, side, scale):
     img = mpimg.imread(path)
     px_h, px_w = img.shape[0], img.shape[1]
     aspect = px_w / px_h
@@ -1531,7 +1623,12 @@ def _place_logo_mobile(fig, path, fig_height, side, scale):
 
     w_frac = w_in / MOBILE_FIG_WIDTH_IN
     h_frac = h_in / fig_height
-    y0 = 0.965 - h_frac / 2
+    # Vertically centered within the fixed header block (title + subtitle),
+    # tracking it directly rather than a hardcoded fraction of the whole
+    # figure - so it stays put beside the title no matter how tall the
+    # dashboard grows.
+    logo_center_frac = 1.0 - (header_in * 0.55) / fig_height
+    y0 = logo_center_frac - h_frac / 2
     x0 = 0.04 if side == 'left' else (0.96 - w_frac)
 
     ax_logo = fig.add_axes([x0, y0, w_frac, h_frac])
@@ -1539,19 +1636,19 @@ def _place_logo_mobile(fig, path, fig_height, side, scale):
     ax_logo.axis('off')
 
 
-def draw_logos_mobile(fig, fig_height, summary):
+def draw_logos_mobile(fig, fig_height, header_in, summary):
     settings = summary.get('design_settings', {})
-    tam_scale = settings.get('tam_scale', 1.0)
-    khalda_scale = settings.get('khalda_scale', 1.0)
+    tam_scale = settings.get('tam_scale_mobile', 1.0)
+    khalda_scale = settings.get('khalda_scale_mobile', 1.0)
 
     if TAM_LOGO_PATH and os.path.isfile(TAM_LOGO_PATH):
         try:
-            _place_logo_mobile(fig, TAM_LOGO_PATH, fig_height, 'left', tam_scale)
+            _place_logo_mobile(fig, TAM_LOGO_PATH, fig_height, header_in, 'left', tam_scale)
         except Exception as e:
             print(f'Could not load TAM logo ({TAM_LOGO_PATH}): {e}')
 
     if KHALDA_LOGO_PATH and os.path.isfile(KHALDA_LOGO_PATH):
         try:
-            _place_logo_mobile(fig, KHALDA_LOGO_PATH, fig_height, 'right', khalda_scale)
+            _place_logo_mobile(fig, KHALDA_LOGO_PATH, fig_height, header_in, 'right', khalda_scale)
         except Exception as e:
             print(f'Could not load Khalda logo ({KHALDA_LOGO_PATH}): {e}')
