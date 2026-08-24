@@ -329,12 +329,17 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         lc1, lc2, lc3 = st.columns(3)
         with lc1:
             st.markdown("**Desktop Bars & Elements**")
-            desktop_hspace = st.slider("Section Vertical Spacing (Desktop)", 0.2, 0.8, 0.45, 0.05)
+            desktop_top_gap_in = st.slider("Gap Above First Section (Desktop, in)", 0.0, 0.8, 0.25, 0.01,
+                                            help="Space between the subtitle and the KPI cards.")
+            desktop_row_gap_in = st.slider("Gap Between Sections (Desktop, in)", 0.5, 1.6, 0.80, 0.01,
+                                            help="Same fixed gap applied between every section - including right after the Lost Communication note - so it's predictable everywhere. A section title needs ~0.4in of headroom and a bar chart's axis label needs ~0.25in below it, so going much below ~0.7in will start crowding titles/labels.")
             desktop_wspace = st.slider("Section Horizontal Spacing (Desktop)", 0.1, 0.5, 0.25, 0.05)
             desktop_sd_margin = st.slider("Shutdown Bar Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
             desktop_temp_margin = st.slider("Motor Temp Bar Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
-            desktop_vx_margin = st.slider("Vibration Chart Left Margin (Desktop)", 0.05, 0.5, 0.19, 0.01)
-            desktop_pie_offset = st.slider("Pie Chart X Offset (Desktop)", -0.5, 0.5, 0.0, 0.01)
+            desktop_vx_margin = st.slider("Vibration Chart Left Margin (Desktop)", 0.02, 0.5, 0.10, 0.01,
+                                           help="Well names are written vertically, so this only needs to be wide enough for one line of text.")
+            desktop_pie_offset = st.slider("Pie Chart X Offset (Desktop)", -0.5, 0.5, 0.0, 0.01,
+                                            help="The pie now starts flush after the title by default and the legend is glued to it - this is just for fine-tuning.")
             desktop_temp_legend_pad = st.slider("Motor Temp Legend Headroom (Desktop)", 0.3, 2.0, 0.9, 0.1,
                                                  help="Blank space reserved above the bars for the legend. Lower = bars start closer to the top.")
             st.markdown("**Desktop Logo**")
@@ -346,10 +351,11 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             mobile_top_gap_in = st.slider("Gap Above First Section (Mobile, in)", 0.0, 0.6, 0.20, 0.01,
                                            help="Space between the subtitle and the KPI cards.")
             mobile_row_gap_in = st.slider("Gap Between Sections (Mobile, in)", 0.6, 1.4, 0.90, 0.01,
-                                           help="Same fixed gap applied between every section - including right after the Lost Communication note - so it's predictable everywhere. A section title needs ~0.5in of headroom and a bar chart's axis label needs ~0.3in below it, so going much below ~0.85in will start crowding titles/labels.")
+                                           help="Same fixed gap applied between every section - including right after the Lost Communication note, and right before the footer - so it's predictable everywhere. A section title needs ~0.5in of headroom and a bar chart's axis label needs ~0.3in below it, so going much below ~0.85in will start crowding titles/labels.")
             mobile_sd_margin = st.slider("Shutdown Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
             mobile_temp_margin = st.slider("Motor Temp Bar Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
-            mobile_vx_margin = st.slider("Vibration Chart Left Margin (Mobile)", 0.05, 0.6, 0.17, 0.01)
+            mobile_vx_margin = st.slider("Vibration Chart Left Margin (Mobile)", 0.03, 0.6, 0.12, 0.01,
+                                          help="Well names are written vertically, so this only needs to be wide enough for one line of text.")
             mobile_pie_offset = st.slider("Pie Chart X Offset (Mobile)", -0.5, 0.5, 0.0, 0.01)
             mobile_temp_legend_pad = st.slider("Motor Temp Legend Headroom (Mobile)", 0.3, 2.0, 0.9, 0.1,
                                                 help="Blank space reserved above the bars for the legend. Lower = bars start closer to the top.")
@@ -358,13 +364,11 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             khalda_scale_mobile = st.slider("Khalda Logo Size (Mobile)", 0.5, 2.0, 1.0, 0.05)
 
         with lc3:
-            st.markdown("**KPI Cards & Footer (shared)**")
+            st.markdown("**KPI Cards (shared)**")
             kpi_top_pad = st.slider("Space ABOVE Cards", -0.1, 0.3, 0.0, 0.01)
             kpi_space = st.slider("Space BEFORE Lost Comm Note", 0.0, 0.3, 0.02, 0.01)
-            kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.3, 0.02, 0.01)
-            div_pad = st.slider("Green Divider Padding (Desktop)", 0.0, 0.2, 0.1, 0.01,
-                                 help="Mobile's divider is centered automatically in its section gap - use the mobile gap sliders instead.")
-            footer_y = st.slider("Footer Line Y Position (Desktop)", 0.0, 0.1, 0.035, 0.005)
+            kpi_bottom_space = st.slider("Space AFTER Lost Comm Note", 0.0, 0.3, 0.02, 0.01,
+                                          help="This controls the room reserved INSIDE the KPI card for the note text itself. The gap between the KPI section and the next section (Shutdown Events) is controlled by 'Gap Between Sections' above, not this slider.")
 
     st.divider()
     build_clicked = st.button("Build outputs", type="primary")
@@ -418,7 +422,8 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
         
         # Inject design settings directly into the summary payload
         summary['design_settings'] = {
-            'desktop_hspace': desktop_hspace,
+            'desktop_top_gap_in': desktop_top_gap_in,
+            'desktop_row_gap_in': desktop_row_gap_in,
             'desktop_wspace': desktop_wspace,
             'desktop_sd_margin': desktop_sd_margin,
             'desktop_temp_margin': desktop_temp_margin,
@@ -439,8 +444,6 @@ if st.session_state.stage in ("review", "done") and st.session_state.summary is 
             'kpi_top_pad': kpi_top_pad,
             'kpi_space': kpi_space,
             'kpi_bottom_space': kpi_bottom_space,
-            'div_pad': div_pad,
-            'footer_y': footer_y
         }
         
         st.session_state.summary = summary

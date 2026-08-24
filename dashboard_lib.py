@@ -949,7 +949,9 @@ def draw_reason_pie(fig, gs_cell, reason_counts, summary, max_slices=8, is_mobil
     poffset = settings.get('mobile_pie_offset', 0.0) if is_mobile else settings.get('desktop_pie_offset', 0.0)
 
     if is_mobile:
-        gs_rows = gs_cell.subgridspec(2, 1, height_ratios=[0.16, 0.84], hspace=0.35)
+        # Small hspace + smaller title row: the title used to leave a lot of
+        # dead air above the pie itself.
+        gs_rows = gs_cell.subgridspec(2, 1, height_ratios=[0.08, 0.92], hspace=0.08)
         title_ax = fig.add_subplot(gs_rows[0])
         title_ax.axis('off')
         title_ax.set_title('Shutdown Reasons \u2014 All Wells', fontsize=19, fontweight='bold',
@@ -982,8 +984,8 @@ def draw_reason_pie(fig, gs_cell, reason_counts, summary, max_slices=8, is_mobil
         ax_legend = fig.add_subplot(gs_inner[0, 1])
     else:
         ax = title_ax
-        ax_legend = title_ax
-        
+        ax_legend = None
+
     ax.axis('off')
     if is_mobile: ax_legend.axis('off')
 
@@ -993,18 +995,27 @@ def draw_reason_pie(fig, gs_cell, reason_counts, summary, max_slices=8, is_mobil
         wedgeprops=dict(edgecolor='white', linewidth=1.5),
         textprops=dict(color='white', fontweight='bold', fontsize=13 if is_mobile else 10.5),
     )
-    
-    # Physically pan the camera over the pie chart to move it seamlessly
-    ax.axis('equal')
-    ax.set_xlim(-1.5 - poffset*3, 1.5 - poffset*3)
+
+    # NOTE: plain ax.axis('equal') defaults to adjustable='datalim', which
+    # silently OVERRIDES any custom xlim we set below to keep the aspect
+    # square - that's why panning the pie with the offset slider never
+    # actually worked. adjustable='box' respects our xlim/anchor instead, and
+    # anchor='W' left-aligns the (now fixed-size) pie box within its row
+    # instead of centering it, so it starts right after the title by default.
+    ax.set_aspect('equal', adjustable='box', anchor='C' if is_mobile else 'W')
+    ax.set_xlim(-1.5 - poffset * 3, 1.5 - poffset * 3)
     ax.set_ylim(-1.5, 1.5)
-    
+
     wrapped_labels = [textwrap.fill(f'{name}  ({int(val)})', width=30) for name, val in zip(counts.index, counts.values)]
-    
+
     if is_mobile:
         ax_legend.legend(wedges, wrapped_labels, loc='center left', bbox_to_anchor=(0.0 + poffset, 0.5), fontsize=13, frameon=False, labelcolor=SLATE)
     else:
-        ax.legend(wedges, wrapped_labels, loc='center left', bbox_to_anchor=(0.95 + poffset, 0.5), fontsize=10, frameon=False, labelcolor=SLATE)
+        # Anchored in the pie's own DATA coordinates (just past its radius),
+        # not axes-fraction, so the legend is physically glued to the pie and
+        # pans together with it - no more drifting apart at different rates.
+        ax.legend(wedges, wrapped_labels, loc='center left', bbox_to_anchor=(1.05, 0.0),
+                  bbox_transform=ax.transData, fontsize=10, frameon=False, labelcolor=SLATE)
 
 
 def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
@@ -1022,7 +1033,7 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
 
     n_wells = len(vx_df)
     settings = summary.get('design_settings', {})
-    margin = settings.get('mobile_vx_margin', 0.17) if is_mobile else settings.get('desktop_vx_margin', 0.19)
+    margin = settings.get('mobile_vx_margin', 0.12) if is_mobile else settings.get('desktop_vx_margin', 0.10)
 
     gs_inner = gs_cell.subgridspec(n_wells + 1, 2, width_ratios=[margin, 1.0 - margin], height_ratios=[0.1] + [1]*n_wells, hspace=0.3, wspace=0.0)
 
@@ -1032,13 +1043,13 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
     chart_axes = []
 
     for i, row in vx_df.iterrows():
-        # Well name gets its own dedicated column (the same margin column the bar
-        # charts use) so it can never collide with this chart's own Y-axis
-        # (vibration G) tick numbers - unlike the bar charts, this chart needs to
-        # keep its real numeric axis, so the label can't just sit in the same axes.
+        # Well name gets its own dedicated column, written vertically so a long
+        # well name doesn't need much horizontal width - it can no longer run
+        # into the chart's own axis numbers no matter how narrow the margin is.
         ax_label = fig.add_subplot(gs_inner[i + 1, 0])
         ax_label.axis('off')
-        ax_label.text(0.98, 0.5, row['Well'], ha='right', va='center', transform=ax_label.transAxes,
+        ax_label.text(0.30, 0.5, row['Well'], ha='center', va='center', rotation=90,
+                      transform=ax_label.transAxes,
                       fontsize=13 if is_mobile else 11, color=NAVY, fontweight='bold')
 
         ax = fig.add_subplot(gs_inner[i + 1, 1])
@@ -1072,34 +1083,16 @@ def draw_vx_line_chart(fig, gs_cell, vx_df, summary, is_mobile=False):
     first_ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.45 if is_mobile else 1.35), ncol=1, frameon=False, labelcolor=SLATE)
 
 
-def draw_logos(fig, summary):
-    settings = summary.get('design_settings', {})
-    tam_scale = settings.get('tam_scale_desktop', 1.0)
-    khalda_scale = settings.get('khalda_scale_desktop', 1.0)
-
-    if TAM_LOGO_PATH and os.path.isfile(TAM_LOGO_PATH):
-        try:
-            tam_logo = mpimg.imread(TAM_LOGO_PATH)
-            w = 0.165 * tam_scale
-            h = 0.095 * tam_scale
-            y = 0.865 + 0.095 - h
-            ax_logo_left = fig.add_axes([0.06, y, w, h])
-            ax_logo_left.imshow(tam_logo)
-            ax_logo_left.axis('off')
-        except Exception as e:
-            print(f'Could not load TAM logo ({TAM_LOGO_PATH}): {e}')
-
-    if KHALDA_LOGO_PATH and os.path.isfile(KHALDA_LOGO_PATH):
-        try:
-            khalda_logo = mpimg.imread(KHALDA_LOGO_PATH)
-            w = 0.165 * khalda_scale
-            h = 0.095 * khalda_scale
-            y = 0.865 + 0.095 - h
-            ax_logo_right = fig.add_axes([0.75, y, w, h])
-            ax_logo_right.imshow(khalda_logo)
-            ax_logo_right.axis('off')
-        except Exception as e:
-            print(f'Could not load Khalda logo ({KHALDA_LOGO_PATH}): {e}')
+INCHES_PER_RATIO_UNIT = 6.126
+DESKTOP_FIG_WIDTH_IN = 19
+DESKTOP_LEFT, DESKTOP_RIGHT = 0.14, 0.86
+MIN_FIGURE_HEIGHT_IN = 16.0
+# Fixed blocks (in inches) for the title+subtitle and the footer rule+text -
+# same "absolute inches, not a fraction of a figure that keeps changing
+# height" fix as the mobile layout, so these no longer grow/shrink oddly as
+# content is added or removed.
+DESKTOP_HEADER_IN = 1.05
+DESKTOP_FOOTER_IN = 0.34
 
 
 def compute_row_height_ratios(summary):
@@ -1130,93 +1123,154 @@ def compute_row_height_ratios(summary):
     return [ratio_kpi, ratio_shutdown, ratio_bar_pie, ratio_vx, ratio_pip, ratio_temp]
 
 
-INCHES_PER_RATIO_UNIT = 6.126
-GRIDSPEC_TOP = 0.835
-GRIDSPEC_BOTTOM = 0.055
-GRIDSPEC_FRACTION = GRIDSPEC_TOP - GRIDSPEC_BOTTOM
-MIN_FIGURE_HEIGHT_IN = 16.0
-
-
-def draw_section_dividers(fig, gs, summary):
+def draw_section_dividers(fig, gs, gap_idx):
+    """Draws the dotted green divider centered inside each spacer row. Some
+    sections draw a title above their own row and/or an x-axis label below
+    it (neither is accounted for by the gridspec cell itself), so the gap
+    needs enough room on both sides - see the row_gap_in default/comment."""
     bottoms, tops, lefts, rights = gs.get_grid_positions(fig)
     x0, x1 = lefts[0], rights[-1]
-    
-    settings = summary.get('design_settings', {})
-    padding = settings.get('div_pad', 0.1)
-
-    for row in range(len(tops) - 1):
-        y_mid = (bottoms[row] + tops[row + 1]) / 2.0
-
-        fig.add_artist(Line2D([x0, x1], [y_mid + padding, y_mid + padding], transform=fig.transFigure,
-                               color='none', linewidth=0, zorder=6))
-
-        fig.add_artist(Line2D([x0, x1], [y_mid], transform=fig.transFigure,
+    for gi in gap_idx:
+        y_mid = (bottoms[gi] + tops[gi]) / 2.0
+        fig.add_artist(Line2D([x0, x1], [y_mid, y_mid], transform=fig.transFigure,
                                color=LIGHT_GREEN, linewidth=1.5, alpha=0.8,
                                linestyle=':', zorder=6))
-                               
-        fig.add_artist(Line2D([x0, x1], [y_mid - padding, y_mid - padding], transform=fig.transFigure,
-                               color='none', linewidth=0, zorder=6))
 
 
 def build_dashboard_figure(summary, report_date, output_png):
     settings = summary.get('design_settings', {})
-    vspace = settings.get('desktop_hspace', 0.45)
     wspace = settings.get('desktop_wspace', 0.25)
-    footer_y = settings.get('footer_y', 0.045)
-    
-    height_ratios = compute_row_height_ratios(summary)
-    gridspec_in = sum(height_ratios) * INCHES_PER_RATIO_UNIT
-    fig_height = max(MIN_FIGURE_HEIGHT_IN, gridspec_in / GRIDSPEC_FRACTION)
+    # Same absolute, inch-based spacing knobs as the mobile layout (see the
+    # comments on MOBILE_* / build_mobile_dashboard_figure): a fixed inch gap
+    # applies predictably between every section regardless of that section's
+    # own height, replacing the old "hspace as a fraction of the *average*
+    # row height" system that made spacing hard to reason about - especially
+    # right after the KPI/Lost-Communication row, which is much shorter than
+    # the rest and so got a disproportionate gap out of the same fraction.
+    top_gap_in = settings.get('desktop_top_gap_in', 0.25)
+    row_gap_in = settings.get('desktop_row_gap_in', 0.80)
 
-    fig = plt.figure(figsize=(19, fig_height), facecolor='white')
+    content_ratios = compute_row_height_ratios(summary)
+    n_content = len(content_ratios)
+    content_in = sum(content_ratios) * INCHES_PER_RATIO_UNIT
+    gaps_in = top_gap_in + row_gap_in * n_content  # (n-1) between rows + 1 before the footer
 
-    gs = fig.add_gridspec(6, 2, height_ratios=height_ratios, hspace=vspace, wspace=wspace,
-                           left=0.14, right=0.86, top=GRIDSPEC_TOP, bottom=GRIDSPEC_BOTTOM)
+    base_total_in = DESKTOP_HEADER_IN + gaps_in + content_in + DESKTOP_FOOTER_IN
+    extra_in = max(0.0, MIN_FIGURE_HEIGHT_IN - base_total_in)
+    header_in = DESKTOP_HEADER_IN + extra_in * 0.5
+    footer_in = DESKTOP_FOOTER_IN + extra_in * 0.5
+    fig_height = header_in + gaps_in + content_in + footer_in
 
-    draw_section_dividers(fig, gs, summary)
+    fig = plt.figure(figsize=(DESKTOP_FIG_WIDTH_IN, fig_height), facecolor='white')
 
-    fig.text(0.5, 0.945, 'Daily ESP Surveillance Summary', fontsize=32, fontweight='bold',
+    top_gap_ratio = top_gap_in / INCHES_PER_RATIO_UNIT
+    row_gap_ratio = row_gap_in / INCHES_PER_RATIO_UNIT
+    combined_ratios = [top_gap_ratio]
+    for r in content_ratios:
+        combined_ratios.append(r)
+        combined_ratios.append(row_gap_ratio)
+
+    top_frac = 1.0 - header_in / fig_height
+    bottom_frac = footer_in / fig_height
+
+    gs = fig.add_gridspec(len(combined_ratios), 2, height_ratios=combined_ratios, hspace=0.0, wspace=wspace,
+                           left=DESKTOP_LEFT, right=DESKTOP_RIGHT, top=top_frac, bottom=bottom_frac)
+
+    content_idx = [1 + 2 * i for i in range(n_content)]
+    gap_idx = [2 + 2 * i for i in range(n_content - 1)]
+    draw_section_dividers(fig, gs, gap_idx)
+
+    title_y = 1.0 - (0.34 / fig_height)
+    subtitle_y = 1.0 - (0.62 / fig_height)
+    fig.text(0.5, title_y, 'Daily ESP Surveillance Summary', fontsize=32, fontweight='bold',
               color=DARK_GREEN, ha='center')
-    fig.text(0.5, 0.895, f'Field Summary  \u2022  {summary["total"]} Wells  \u2022  {report_date}',
+    fig.text(0.5, subtitle_y, f'Field Summary  \u2022  {summary["total"]} Wells  \u2022  {report_date}',
               fontsize=16, color=GREEN, ha='center')
 
-    draw_logos(fig, summary)
+    draw_logos(fig, fig_height, header_in, summary)
 
-    draw_kpi_cards(fig, gs[0, :], summary)
+    draw_kpi_cards(fig, gs[content_idx[0], :], summary)
 
     draw_table(
-        fig, gs[1, :], summary['shutdown_df'],
+        fig, gs[content_idx[1], :], summary['shutdown_df'],
         columns=['Well', 'Reason', 'Shutdown Start', 'Shutdown End', 'Downtime (hrs)'],
         title=f'Shutdown Events & Downtime',
         accent=LIGHT_GREEN, empty_msg='No shutdown events logged for this period.',
         max_rows=20, col_widths=[0.14, 0.34, 0.18, 0.18, 0.16], is_mobile=False
     )
 
-    draw_shutdown_count_bar(fig, gs[2, 0], summary['shutdown_count_df'], summary, is_mobile=False)
-    draw_reason_pie(fig, gs[2, 1], summary['reason_counts'], summary, is_mobile=False)
+    draw_shutdown_count_bar(fig, gs[content_idx[2], 0], summary['shutdown_count_df'], summary, is_mobile=False)
+    draw_reason_pie(fig, gs[content_idx[2], 1], summary['reason_counts'], summary, is_mobile=False)
 
-    draw_vx_line_chart(fig, gs[3, :], summary['vx_df'], summary, is_mobile=False)
+    draw_vx_line_chart(fig, gs[content_idx[3], :], summary['vx_df'], summary, is_mobile=False)
 
     pip_df = summary['pip_df']
     pip_cols = ['Well', 'PIP-Yesterday 7AM (psi)', 'PIP-Today 7AM (psi)', 'Net Rise (psi)'] if not pip_df.empty else []
     pip_thresh = summary.get('pip_threshold', PIP_RISE_THRESHOLD_PSI)
     
     draw_table(
-        fig, gs[4, :], pip_df,
+        fig, gs[content_idx[4], :], pip_df,
         columns=pip_cols,
         title=f'Rising PIP Trends (> {pip_thresh} psi sustained, no shutdowns)',
         accent=LIGHT_GREEN, empty_msg=f'No wells showed a sustained PIP rise greater than {pip_thresh} psi.',
         max_rows=12, col_widths=[0.20, 0.30, 0.30, 0.20], is_mobile=False
     )
 
-    draw_motor_temp_bar(fig, gs[5, :], summary['temp_df'], summary, is_mobile=False)
+    draw_motor_temp_bar(fig, gs[content_idx[5], :], summary['temp_df'], summary, is_mobile=False)
 
-    fig.add_artist(Line2D([0.14, 0.86], [footer_y], transform=fig.transFigure, color=GRID, linewidth=2.0))
-    fig.text(0.5, footer_y - 0.02, f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
+    footer_line_y = bottom_frac * 0.55
+    fig.add_artist(Line2D([DESKTOP_LEFT, DESKTOP_RIGHT], [footer_line_y], transform=fig.transFigure, color=GRID, linewidth=2.0))
+    fig.text(0.5, footer_line_y - (0.16 / fig_height), f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
              fontsize=13, color=SLATE, ha='center', fontweight='bold')
 
-    plt.savefig(output_png, dpi=150, facecolor='white', bbox_inches='tight')
+    # pad_inches is generous on purpose: bbox_inches='tight' underestimates the
+    # extent of rotated text (e.g. the vertical well names on the vibration
+    # chart), so a small pad can silently clip a character off the edge.
+    plt.savefig(output_png, dpi=150, facecolor='white', bbox_inches='tight', pad_inches=0.3)
     plt.close(fig)
+
+
+DESKTOP_LOGO_HEIGHT_IN = 0.62
+DESKTOP_LOGO_MAX_WIDTH_IN = 2.6
+
+
+def _place_logo_desktop(fig, path, fig_height, header_in, side, scale):
+    img = mpimg.imread(path)
+    px_h, px_w = img.shape[0], img.shape[1]
+    aspect = px_w / px_h
+    h_in = DESKTOP_LOGO_HEIGHT_IN * scale
+    w_in = min(DESKTOP_LOGO_MAX_WIDTH_IN * scale, aspect * h_in)
+
+    w_frac = w_in / DESKTOP_FIG_WIDTH_IN
+    h_frac = h_in / fig_height
+    # Vertically centered within the fixed header block (title + subtitle),
+    # tracking it directly rather than a fraction of the whole figure - so it
+    # stays put beside the title no matter how tall the dashboard grows.
+    logo_center_frac = 1.0 - (header_in * 0.55) / fig_height
+    y0 = logo_center_frac - h_frac / 2
+    x0 = 0.05 if side == 'left' else (0.95 - w_frac)
+
+    ax_logo = fig.add_axes([x0, y0, w_frac, h_frac])
+    ax_logo.imshow(img)
+    ax_logo.axis('off')
+
+
+def draw_logos(fig, fig_height, header_in, summary):
+    settings = summary.get('design_settings', {})
+    tam_scale = settings.get('tam_scale_desktop', 1.0)
+    khalda_scale = settings.get('khalda_scale_desktop', 1.0)
+
+    if TAM_LOGO_PATH and os.path.isfile(TAM_LOGO_PATH):
+        try:
+            _place_logo_desktop(fig, TAM_LOGO_PATH, fig_height, header_in, 'left', tam_scale)
+        except Exception as e:
+            print(f'Could not load TAM logo ({TAM_LOGO_PATH}): {e}')
+
+    if KHALDA_LOGO_PATH and os.path.isfile(KHALDA_LOGO_PATH):
+        try:
+            _place_logo_desktop(fig, KHALDA_LOGO_PATH, fig_height, header_in, 'right', khalda_scale)
+        except Exception as e:
+            print(f'Could not load Khalda logo ({KHALDA_LOGO_PATH}): {e}')
 
 
 def export_excel(summary, results, output_xlsx):
@@ -1366,7 +1420,9 @@ MOBILE_LEFT, MOBILE_RIGHT = 0.09, 0.91
 MOBILE_INCHES_PER_RATIO_UNIT = 6.126
 MOBILE_MIN_HEIGHT_IN = 14.0
 MOBILE_HEADER_IN = 0.62   # fixed block reserved for title + subtitle
-MOBILE_FOOTER_IN = 0.34   # fixed block reserved for footer rule + generated-by text
+MOBILE_FOOTER_IN = 0.24   # fixed block for just the footer rule + text itself -
+                          # clearance for the last section's own x-axis label
+                          # is handled by the trailing row_gap_in below, not this.
 
 
 def _shorten_dt(val):
@@ -1520,7 +1576,10 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     content_ratios = compute_row_height_ratios_mobile(summary)
     n_content = len(content_ratios)
     content_in = sum(content_ratios) * MOBILE_INCHES_PER_RATIO_UNIT
-    gaps_in = top_gap_in + row_gap_in * (n_content - 1)
+    # One row_gap_in between every pair of content rows, PLUS one more before
+    # the footer - that last one is what used to be missing, which is why the
+    # last section's own x-axis label collided with the footer text below it.
+    gaps_in = top_gap_in + row_gap_in * n_content
 
     # If the content is short enough that MOBILE_MIN_HEIGHT_IN would otherwise
     # kick in, put the slack into the header/footer margins rather than
@@ -1535,14 +1594,14 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     fig = plt.figure(figsize=(MOBILE_FIG_WIDTH_IN, fig_height), facecolor='white')
 
     # Interleave a spacer row (sized in the same ratio units) between every
-    # pair of content rows, plus one above the first row for the top gap.
+    # pair of content rows, plus one above the first row for the top gap and
+    # one after the last row to clear its x-axis label before the footer.
     top_gap_ratio = top_gap_in / MOBILE_INCHES_PER_RATIO_UNIT
     row_gap_ratio = row_gap_in / MOBILE_INCHES_PER_RATIO_UNIT
     combined_ratios = [top_gap_ratio]
     for i, r in enumerate(content_ratios):
         combined_ratios.append(r)
-        if i < n_content - 1:
-            combined_ratios.append(row_gap_ratio)
+        combined_ratios.append(row_gap_ratio)
 
     top_frac = 1.0 - header_in / fig_height
     bottom_frac = footer_in / fig_height
@@ -1550,13 +1609,15 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     gs = fig.add_gridspec(len(combined_ratios), 1, height_ratios=combined_ratios, hspace=0.0,
                            left=MOBILE_LEFT, right=MOBILE_RIGHT, top=top_frac, bottom=bottom_frac)
 
-    # content rows now live at gs[1], gs[3], gs[5], ... (index 0 is the top gap)
+    # content rows now live at gs[1], gs[3], gs[5], ... (index 0 is the top gap;
+    # the very last row is the trailing gap before the footer, no divider needed
+    # there since the footer rule already acts as the separator)
     content_idx = [1 + 2 * i for i in range(n_content)]
     gap_idx = [2 + 2 * i for i in range(n_content - 1)]
     draw_section_dividers_mobile(fig, gs, gap_idx, fig_height)
 
-    title_y = 1.0 - (0.20 / fig_height)
-    subtitle_y = 1.0 - (0.42 / fig_height)
+    title_y = 1.0 - (0.18 / fig_height)
+    subtitle_y = 1.0 - (0.34 / fig_height)
     fig.text(0.5, title_y, 'Daily ESP Surveillance Summary', fontsize=25, fontweight='bold',
               color=DARK_GREEN, ha='center')
     fig.text(0.5, subtitle_y, f'{summary["total"]} Wells  \u2022  {report_date}',
@@ -1606,7 +1667,8 @@ def build_mobile_dashboard_figure(summary, report_date, output_png):
     fig.text(0.5, footer_line_y - (0.16 / fig_height), f'Generated {datetime.now().strftime("%d-%b-%Y %H:%M")}  •  ProductionLink Team, TAM OIL',
              fontsize=13.5, color=SLATE, ha='center', fontweight='bold')
 
-    plt.savefig(output_png, dpi=200, facecolor='white', bbox_inches='tight')
+    # Same rotated-text tight-bbox safety margin as the desktop save (see comment there).
+    plt.savefig(output_png, dpi=200, facecolor='white', bbox_inches='tight', pad_inches=0.3)
     plt.close(fig)
 
 
